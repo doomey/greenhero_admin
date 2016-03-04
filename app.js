@@ -18,6 +18,7 @@ var policies = require('./routes/policies');
 var greenspace = require('./routes/greenspace');
 var background = require('./routes/background');
 var temp = require('./routes/temp');
+var greenplayer = require('./routes/greenplayer');
 
 var app = express();
 
@@ -52,6 +53,8 @@ app.use('/accessterms', accessterm);
 app.use('/greenspaces', greenspace);
 app.use('/backgrounds', background);
 app.use('/temp', temp);
+app.use('/greenplayers', greenplayer);
+
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
   var err = new Error('Not Found');
