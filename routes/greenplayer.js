@@ -92,12 +92,6 @@ router.get('/', function(req, res, next) {
 });
 
 router.post('/', function(req, res, next) {
-   var title = req.body.title;
-   var company = req.body.company;
-   var startDate = req.body.startDate;
-   var endDate = req.body.endDate;
-   var content = req.body.content;
-
    //커넥션
    function getConnection(callback) {
       pool.getConnection(function(err, connection) {
@@ -109,14 +103,20 @@ router.post('/', function(req, res, next) {
       })
    }
    //동영상 업로드
-   function uploadMultimedia(connection, callback) {
+   function uploadMultimedia(connection, callback) { //angularjs에서 mp4, avi만 올릴 수 있게 만들기.
       var form = new formidable.IncomingForm();
       form.uploadDir = path.join(__dirname, '../uploads');
       form.keepExtensions = true;
       form.multiples = true;
 
-      form.parse(req, function(err, fields, files) {
-         if(files['multimedia'] instanceof Object) {
+      form.parse(req, function(err, fields, files) { //fields에 title, content등등 넘어옴
+         if(files['multimedia'] instanceof Array) {
+            var err = new Error('다중 동영상 업로드는 지원하지 않습니다.');
+            next(err);
+         } else if(!files['multimedia']) {
+            var err = new Error('반드시 동영상은 업로드되어야 합니다.');
+            next(err);
+         } else {
             var file = files['multimedia'];
 
             var mimeType = mime.lookup(path.basename(file.path));
@@ -150,6 +150,11 @@ router.post('/', function(req, res, next) {
                      });
 
                      var info = {
+                        "title" : fields.title,
+                        "content" : fields.content,
+                        "company" : fields.company,
+                        "startDate" : fields.startDate,
+                        "endDate" : fields.endDate,
                         "fileurl" : data.Location,
                         "originalfilename" : file.name,
                         "modifiedfilename" : path.basename(file.path),
@@ -159,18 +164,6 @@ router.post('/', function(req, res, next) {
                      callback(null, info, connection);
                   }
                })
-         } else if(!files['multimedia']) {
-            var info = {
-               "fileurl" : null,
-               "originalfilename" : null,
-               "modifiedfilename" : null,
-               "filetype" : null
-            };
-
-            callback(null, info, connection);
-         } else {
-            var err = new Error('다중 동영상 업로드는 지원하지 않습니다.');
-            next(err);
          }
       })
    }
@@ -178,7 +171,7 @@ router.post('/', function(req, res, next) {
    function insertEpromotion(info, connection, callback) {
       var insert = "insert into greendb.epromotion(title, cname, sdate, edate, content, iparty_id, fileurl, uploaddate, originalfilename, modifiedfilename, filetype) "+
                    "values(?, ?, ?, ?, ?, ?, ?, now(), ?, ?, ?)";
-      connection.query(insert, [title, company, startDate, endDate, content, 1, info.fileurl, info.originalfilename, info.modifiedfilename, info.filetype], function(err, result) { //로그인필요
+      connection.query(insert, [info.title, info.company, info.startDate, info.endDate, info.content, 1, info.fileurl, info.originalfilename, info.modifiedfilename, info.filetype], function(err, result) { //로그인필요
          connection.release();
          if(err) {
             callback(err);
@@ -199,6 +192,10 @@ router.post('/', function(req, res, next) {
 
 router.put('/:articleid', function(req, res, next) {
    var articleid = req.params.articleid
+
+   //todo : 1. getConnection
+   //todo : 2. updateEpromotion
+   //todo : 3. filestatus가 delete,
 });
 
 router.delete('/:articleid', function(req, res, next) {
