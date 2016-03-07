@@ -61,7 +61,7 @@ module.exports = function(passport) {
                 } else {
                     if(results.length === 0) {
                         var err = new Error('사용자가 존재하지 않습니다...');
-                        callback(err);
+                        next(err);
                     } else {
                         var user = {
                             "id" : results[0].id,
@@ -70,7 +70,6 @@ module.exports = function(passport) {
                             "name" : results[0].google_name,
                             "nickname" : results[0].nickname
                         };
-                        console.log('유저', user);
                         callback(null, user);
                     }
                 }
@@ -84,7 +83,6 @@ module.exports = function(passport) {
                     callback(err);
                 } else {
                     if(result === true) {
-
                         callback(null, user);
                     } else {
                         callback(null, false);

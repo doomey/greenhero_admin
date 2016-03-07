@@ -3,6 +3,9 @@ var router = express.Router();
 var async = require('async');
 var passport = require('passport');
 var bcrypt = require('bcrypt');
+var splAES = require('./sqlAES.js');
+
+splAES.setServerKey(process.env.GREEN_SERVER_KEY);
 
 router.post('/login', function(req, res, next) {
    if(req.secure) {
@@ -44,6 +47,8 @@ router.post('/signup', function(req, res, next) {
    if(req.secure) {
       var username = req.body.username;
       var password = req.body.password;
+      var name = req.body.name;
+      var phone = req.body.phone;
 
       //1. 커넥션 연결
       function getConnection(callback) {
@@ -98,9 +103,9 @@ router.post('/signup', function(req, res, next) {
 
       //5. insert
       function insertIparty(connection, hashPassword, callback) {
-         var insert = "insert into greendb.iparty(username, hashpassword, partytype) "+
-                      "values(?, ?, 1)";
-         connection.query(insert, [username, hashPassword], function(err, result) {
+         var insert = "insert into greendb.iparty(username, hashpassword, partytype" + sqlAES.encrypt(2) + ") "+
+                      "values(?, ?, 1, ?, ?)";
+         connection.query(insert, [username, hashPassword, 2, name, phone], function(err, result) {
             if(err) {
                callback(err);
             } else {

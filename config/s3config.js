@@ -5,7 +5,10 @@ var s3 = {
    "bucket" : "greenhero",
    "imageDir" : "photos",
    "bgDir" : "bg",
-   "imageACL" : "public-read"
+   "multimediaDir" : "videos",
+   "imageACL" : "public-read",
+   "bgACL" : "public-read",
+   "multimediaACL" : "public-read"
 }
 
 module.exports = s3;

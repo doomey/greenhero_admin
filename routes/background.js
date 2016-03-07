@@ -72,7 +72,7 @@ router.post('/', function(req, res, next) {
                "params" : {
                   "Bucket" : s3config.bucket,
                   "Key" : s3config.bgDir + "/" + path.basename(file.path),
-                  "ACL" : s3config.imageACL,
+                  "ACL" : s3config.bgACL,
                   "ContentType" : mimeType
                }
             });
@@ -140,7 +140,7 @@ router.post('/', function(req, res, next) {
          res.json({"s3URL" : null});
       } else { //배경을 한개만 올린 경우
          var file = files['background'];
-
+         console.log("파일 타입 : ", typeof file);
          var mimeType = mime.lookup(path.basename(file.path));
 
          var s3 = new AWS.S3({
@@ -150,7 +150,7 @@ router.post('/', function(req, res, next) {
             "params" : {
                "Bucket" : s3config.bucket,
                "Key" : s3config.bgDir + "/" + path.basename(file.path),
-               "ACL" : s3config.imageACL,
+               "ACL" : s3config.bgACL,
                "ContentType" : mimeType
             }
          });

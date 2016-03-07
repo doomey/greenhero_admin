@@ -73,6 +73,7 @@ router.get('/', function(req, res, next) {
          }
       });
    }
+
    async.waterfall([getConnection, getTotal, selectPolicy], function(err, info) {
       if(err) {
          err.message = "운영정책 불러오기에 실패하였습니다...";
