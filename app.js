@@ -19,7 +19,7 @@ var greenspace = require('./routes/greenspace');
 var background = require('./routes/background');
 var temp = require('./routes/temp');
 var greenplayer = require('./routes/greenplayer');
-
+var greenshop = require('./routes/greenshop');
 var app = express();
 
 // view engine setup
@@ -54,6 +54,7 @@ app.use('/greenspaces', greenspace);
 app.use('/backgrounds', background);
 app.use('/temp', temp);
 app.use('/greenplayers', greenplayer);
+app.use('/items', greenshop);
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {

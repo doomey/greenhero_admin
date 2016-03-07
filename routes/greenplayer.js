@@ -193,13 +193,222 @@ router.post('/', function(req, res, next) {
 router.put('/:articleid', function(req, res, next) {
    var articleid = req.params.articleid
 
+   var form = new formidable.IncomingForm();
+   form.uploadDir = path.join(__dirname, '../uploads');
+   form.keepExtensions = true;
+   form.multiples = true;
+
    //todo : 1. getConnection
-   //todo : 2. updateEpromotion
-   //todo : 3. filestatus가 delete,
+   function getConnection(callback) {
+      pool.getConnection(function(err, connection) {
+         if(err) {
+            callback(err);
+         } else {
+            callback(null, connection);
+         }
+      })
+   }
+   //todo : 2.selectEpromotion
+   function selectEpromotion(connection, callback) {
+      var select = "select fileurl, modifiedfilename as filename "+
+                   "from greendb.epromotion "+
+                   "where id = ?";
+      connection.query(select, [articleid], function(err, results) {
+         if(err) {
+            connection.release();
+            callback(err);
+         } else {
+            console.log('리저트 : ', results[0]);
+            callback(null, results[0], connection);
+         }
+      });
+   }
+
+   //todo : 3. updateEpromotion
+   function updateEpromotion(fileinfo, connection, callback) {
+
+      var mimeType = mime.lookup(path.basename(fileinfo.fileurl));
+
+      var s3 = new AWS.S3({
+         "accessKeyId" : s3config.key,
+         "secretAccessKey" : s3config.secret,
+         "region" : s3config.region,
+         "params" : {
+            "Bucket" : s3config.bucket,
+            "Key" : s3config.multimediaDir + "/" + fileinfo.filename,
+            "ACL" : s3config.multimediaACL,
+            "ContentType" : mimeType
+         }
+      });
+
+      form.parse(req, function(err, fields, files) {
+         var title = fields.title;
+         var content = fields.content;
+         var startDate = fields.startDate;
+         var endDate = fields.endDate;
+         var company = fields.company;
+         var filestatus = fields.filestatus;
+
+         if(filestatus = "replacefile") {
+            var mimeType = mime.lookup(path.basename(fileinfo.fileurl));
+
+            var s3 = new AWS.S3({
+               "accessKeyId" : s3config.key,
+               "secretAccessKey" : s3config.secret,
+               "region" : s3config.region,
+               "params" : {
+                  "Bucket" : s3config.bucket,
+                  "Key" : s3config.multimediaDir + "/" + path.basename(fileinfo.fileurl),
+                  "ACL" : s3config.multimediaACL,
+                  "ContentType" : mimeType
+               }
+            });
+
+            s3.deleteObject(s3.params, function(err, data) {
+               if(err) {
+                  callback(err);
+               } else {
+                  console.log(data);
+               }
+            });
+
+            var file = files['multimedia'];
+
+            mimeType = mime.lookup(path.basename(file.path));
+
+            var s3 = new AWS.S3({
+               "accessKeyId" : s3config.key,
+               "secretAccessKey" : s3config.secret,
+               "region" : s3config.region,
+               "params" : {
+                  "Bucket" : s3config.bucket,
+                  "Key" : s3config.multimediaDir + "/" + path.basename(file.fileurl),
+                  "ACL" : s3config.multimediaACL,
+                  "ContentType" : mimeType
+               }
+            });
+
+            var body = fs.createReadStream(file.path);
+            s3.upload({"Body" : body})
+               .on('httpUploadProgress', function(event) {
+                  console.log(event);
+               })
+               .send(function(err, data) {
+                  if(err) {
+                     console.log(err);
+                     cb(err);
+                  } else {
+                     console.log(data);
+
+                     fs.unlink(file.path, function() {
+                        console.log(file.path + " 파일이 삭제되었습니다...");
+                     })
+
+                     var update = "update greendb.epromotion "+
+                                  "set fileurl = ?, "+
+                                  "    uploaddate = now(), "+
+                                  "    originalfilename = ?, "+
+                                  "    modifiedfilename = ?, "+
+                                  "    filetype = ? "+
+                                  "where id = ?";
+                     connection.query(update, [data.Location, path.basename(file.name, path.extname(file.name)), path.basename(file.path), file.type, articleid], function(err, result) {
+                        connection.release();
+                        if(err) {
+                           callback(err);
+                        } else {
+                           callback(null, {"message" : "해당 글이 수정되었습니다."});
+                        }
+                     });
+                  }
+               })
+         }
+      });
+
+   }
+   //todo : 4. filestatus가 delete이면 파일 삭제하고 다른파일 upload
+
+   async.waterfall([getConnection, selectEpromotion, updateEpromotion], function(err, result) {
+      if(err) {
+         next(err);
+      } else {
+         res.json(result);
+      }
+   });
 });
 
 router.delete('/:articleid', function(req, res, next) {
    var articleid = req.params.articleid
+
+   //getconnection
+   function getConnection(callback) {
+      pool.getConnection(function(err, connection) {
+         if(err) {
+            callback(err);
+         } else {
+            callback(null, connection);
+         }
+      })
+   }
+   //selectEpromotion해서 fileurl불러오기
+   function selectEpromotion(connection, callback) {
+      var select = "select fileurl "+
+                   "from greendb.epromotion "+
+                   "where id = ?";
+      connection.query(select, [articleid], function(err, results) {
+         if(err) {
+            callback(err);
+         } else {
+            callback(null, results[0].fileurl, connection);
+         }
+      });
+   }
+   //s3에 파일 삭제
+   function deleteFile(fileurl, connection, callback) {
+      var mimeType = mime.lookup(path.basename(fileurl));
+
+      var s3 = new AWS.S3({
+         "accessKeyId" : s3config.key,
+         "secretAccessKey" : s3config.secret,
+         "region" : s3config.region,
+         "params" : {
+            "Bucket" : s3config.bucket,
+            "Key" : s3config.multimediaDir + "/" + path.basename(fileurl),
+            "ACL" : s3config.multimediaACL,
+            "ContentType" : mimeType
+         }
+      });
+
+      s3.deleteObject(s3.params, function(err, data) {
+         if(err) {
+            callback(err);
+         } else {
+            console.log(data);
+            callback(null, connection);
+         }
+      });
+   }
+   //deleteEpromotion
+   function deleteEpromotion(connection, callback) {
+      var deleteSql = "delete from greendb.epromotion "+
+                      "where id = ?";
+      connection.query(deleteSql, [articleid], function(err, result) {
+         connection.release();
+         if(err) {
+            callback(err);
+         } else {
+            callback(null, {"message" : "해당 글이 삭제되었습니다."});
+         }
+      })
+   }
+
+   async.waterfall([getConnection, selectEpromotion, deleteFile, deleteEpromotion], function(err, result) {
+      if(err) {
+         err.message = "해당 글의 삭제에 실패하였습니다...";
+         next(err);
+      } else {
+         res.json(result);
+      }
+   });
 });
 
 module.exports = router;
