@@ -1,6 +1,9 @@
 var async = require('async');
 var bcrypt = require('bcrypt');
 var LocalStrategy = require('passport-local').Strategy;
+var sqlAES = require('../routes/sqlAES.js');
+
+sqlAES.setServerKey(process.env.GREEN_SERVER_KEY);
 
 module.exports = function(passport) {
     passport.serializeUser(function(user, done) {
@@ -12,7 +15,7 @@ module.exports = function(passport) {
             if(err) {
                 done(err);
             } else {
-                var sql = "select id, username, name, google_id, google_username, google_email, google_name, google_photo "+
+                var sql = "select id, username, name, google_id, google_email, google_name "+
                           "from iparty " +
                           "where id = ?";
                 connection.query(sql, [id], function(err, results) {
@@ -51,9 +54,11 @@ module.exports = function(passport) {
         }
         //2. selectpassword
         function selectIparty(connection, callback) {
-            var select = "select id, hashpassword, nickname, google_email, google_name "+
-                         "from greendb.iparty "+
-                         "where username = ?";
+            var select = "select id, username, hashpassword, nickname, google_name, " +
+               sqlAES.decrypt("google_email", true) +
+                   //"convert(aes_decrypt(google_email, unhex(" + connection.escape(serverKey) + ")) using utf8) as gemail " +
+               "from greendb.iparty " +
+               "where username = ?";
             connection.query(select, [username], function(err, results) {
                 connection.release();
                 if(err) {
@@ -61,7 +66,7 @@ module.exports = function(passport) {
                 } else {
                     if(results.length === 0) {
                         var err = new Error('사용자가 존재하지 않습니다...');
-                        next(err);
+                        callback(err);
                     } else {
                         var user = {
                             "id" : results[0].id,

@@ -8,7 +8,17 @@ var formidable = require('formidable');
 var mime = require('mime');
 var path = require('path');
 
-router.get('/', function(req, res, next) {
+function isLoggedIn(req, res, next) {
+   if(!req.isAuthenticated()) {
+      var err = new Error('로그인이 필요합니다...');
+      err. status = 401;
+      next(err);
+   } else {
+      next(null, {"message" : "로그인이 완료되었습니다..."});
+   }
+}
+
+router.get('/', isLoggedIn, function(req, res, next) {
    //커넥션
    function getConnection(callback) {
       pool.getConnection(function(err, connection) {
@@ -22,7 +32,7 @@ router.get('/', function(req, res, next) {
    //select background
    function selectBackground(connection, callback) {
       var select = "select id, name, path "+
-                   "from greendb.background";
+         "from greendb.background";
       connection.query(select, [], function(err, results) {
          if(err) {
             callback(err);
@@ -53,7 +63,7 @@ router.get('/', function(req, res, next) {
    });
 });
 
-router.post('/', function(req, res, next) {
+router.post('/', isLoggedIn, function(req, res, next) {
    var form = new formidable.IncomingForm();
    form.uploadDir = path.join(__dirname, '../uploads');
    form.keepExtensions = true;
@@ -130,7 +140,7 @@ router.post('/', function(req, res, next) {
             //send함수의 끝
          }, function(err, result) {
             if(err) {
-               err.message = "배경사진 업로드에 상공하였습니다.";
+               err.message = "배경사진 업로드에 실패하였습니다.";
                next(err);
             } else {
                res.json(results);
@@ -198,7 +208,7 @@ router.post('/', function(req, res, next) {
 
                   async.waterfall([getConnection, insertBackgrounds], function(err, result) {
                      if(err) {
-                        err.message = "배경사진 업로드에 상공하였습니다.";
+                        err.message = "배경사진 업로드에 실패하였습니다.";
                         next(err);
                      } else {
                         res.json({ "s3URL" : data.Location });
@@ -211,7 +221,7 @@ router.post('/', function(req, res, next) {
    });
 });
 
-router.delete('/', function(req, res, next) {
+router.delete('/', isLoggedIn, function(req, res, next) {
    var bid = [];
    var bgid = req.body.bgid;
 

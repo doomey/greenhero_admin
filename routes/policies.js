@@ -210,4 +210,125 @@ router.delete('/:articleid', function(req, res, next) {
    });
 });
 
+router.get('/searching', function(req, res, next) {
+   //1. getConnection
+   function getConnection(callback) {
+      pool.getConnection(function(err, connection) {
+         if(err) {
+            callback(err);
+         } else {
+            callback(null, connection);
+         }
+      })
+   }
+   //2. get total
+   function getTotal(connection, callback) {
+      var select = "select count(id) as cnt "+
+         "from greendb.article "+
+         "where board_id = 4";
+      connection.query(select, [], function(err, results) {
+         if(err) {
+            connection.release();
+            callback(err);
+         } else {
+            var total = results[0].cnt;
+            callback(null, total, connection);
+         }
+      });
+   }
+   //3. select policy & paging
+   function selectPolicy(total, connection, callback) {
+      var search = '%'+req.query.search+'%';
+      var type = req.query.type;
+      var page = parseInt(req.query.page);
+      page = (isNaN(page))? 1 : page;
+      page = (page < 1)? 1 : page;
+
+      var limit = 10;
+      var offset = limit * (page - 1);
+
+      if(type === "title") {
+         var select = "select id, title, body, date_format(CONVERT_TZ(now(), '+00:00', '+9:00'), '%Y-%m-%d %H:%i:%s') as wdatetime "+
+            "from greendb.article "+
+            "where board_id = 4 and title like ?"+
+            "order by id desc limit ? offset ?";
+         connection.query(select, [search, limit, offset] , function(err, results) {
+            connection.release();
+            if(err) {
+               callback(err);
+            } else {
+               var info = {
+                  "result" : {
+                     "total" : total,
+                     "page" : page,
+                     "listPerPage" : limit,
+                     "list" : []
+                  }
+               };
+               var date = new Date();
+               async.each(results, function(item, callback) {
+                  info.result.list.push({
+                     "id" : item.id,
+                     "type" : 4,
+                     "title" : item.title,
+                     "date" : item.wdatetime,
+                     "body" : item.body
+                  });
+               }, function(err) {
+                  if(err)
+                     callback(err);
+               });
+               callback(null, info);
+            }
+         });
+      }
+
+      if(type === "body") {
+         var select = "select id, title, body, date_format(CONVERT_TZ(now(), '+00:00', '+9:00'), '%Y-%m-%d %H:%i:%s') as wdatetime "+
+            "from greendb.article "+
+            "where board_id = 4 and body like ?"+
+            "order by id desc limit ? offset ?";
+         connection.query(select, [search, limit, offset] , function(err, results) {
+            connection.release();
+            if(err) {
+               callback(err);
+            } else {
+               var info = {
+                  "result" : {
+                     "total" : total,
+                     "page" : page,
+                     "listPerPage" : limit,
+                     "list" : []
+                  }
+               };
+               var date = new Date();
+               async.each(results, function(item, callback) {
+                  info.result.list.push({
+                     "id" : item.id,
+                     "type" : 4,
+                     "title" : item.title,
+                     "date" : item.wdatetime,
+                     "body" : item.body
+                  });
+               }, function(err) {
+                  if(err)
+                     callback(err);
+               });
+               callback(null, info);
+            }
+         });
+      }
+
+   }
+
+   async.waterfall([getConnection, getTotal, selectPolicy], function(err, info) {
+      if(err) {
+         err.message = "검색에 실패하였습니다.";
+         next(err);
+      } else {
+         res.json(info);
+      }
+   });
+});
+
 module.exports = router;
