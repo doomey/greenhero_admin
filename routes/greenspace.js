@@ -47,7 +47,7 @@ router.get('/', isLoggedIn, function(req, res, next) {
          page = (isNaN(page))? 1 : page;
          page = (page < 1) ?  1 : page;
 
-         var limit = 10;
+         var limit = parseInt(req.query.limit);
          var offset = limit * (page - 1);
 
          var select = "select e.id as eid, i.nickname as nickname, e.title as title, e.content as body, e.heart as heart, date_format(CONVERT_TZ(e.wdatetime,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as wdatetime "+
@@ -133,7 +133,7 @@ router.get('/searching', isLoggedIn, function(req, res, next) {
          page = (isNaN(page)) ? 1 : page;
          page = (page < 1) ? 1 : page;
 
-         limit = 10;
+         limit = parseInt(req.query.limit);
          offset = limit * (page - 1);
 
          if (type === 'title') {
@@ -281,12 +281,12 @@ router.get('/:articleid', isLoggedIn, function(req, res, next) {
             "from greendb.e_diary e join greendb.iparty i on (e.iparty_id = i.id) "+
             "where e.id = ?";
          connection.query(select, [articleid], function(err, results) {
+            console.log('리저츠 :', results);
                if (err) {
                   connection.release();
                   callback(err);
                } else {
                   var bginfo = {};
-                  console.log('여기', results[0].bid);
                   if(results[0].bid !== null) {
                      var selectBG = "select name, path "+
                         "from greendb.background "+

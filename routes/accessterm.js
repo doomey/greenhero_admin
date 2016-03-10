@@ -35,7 +35,7 @@ router.get('/', function(req, res, next) {
       page = (isNaN(page))? 1 : page;
       page = (page < 1)? 1 : page;
 
-      var limit = 10;
+      var limit = parseInt(req.query.limit);
       var offset = limit * (page - 1);
 
       var select = "select id, title, body, date_format(CONVERT_TZ(now(), '+00:00', '+9:00'), '%Y-%m-%d %H:%i:%s') as wdatetime "+
@@ -249,7 +249,7 @@ router.get('/searching', function(req, res, next) {
       page = (isNaN(page))? 1 : page;
       page = (page < 1)? 1 : page;
 
-      var limit = 10;
+      var limit = parseInt(req.query.limit);
       var offset = limit * (page - 1);
 
       if(type === "title") {

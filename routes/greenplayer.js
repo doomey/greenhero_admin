@@ -50,7 +50,7 @@ router.get('/', isLoggedIn, function(req, res, next) {
          page = (isNaN(page))? 1 : page;
          page = (page<1) ? 1 : page;
 
-         limit = 10;
+         limit = parseInt(req.query.limit);
          offset = limit * (page - 1);
 
          //안드로이드에서 게시글 번호 붙이기 -> offset과 info.result.list의 인덱스를 이용하여 글 번호를 붙일것.
@@ -121,69 +121,75 @@ router.post('/', isLoggedIn, function(req, res, next) {
          })
       }
       //동영상 업로드
-      function uploadMultimedia(connection, callback) { //angularjs에서 mp4, avi만 올릴 수 있게 만들기.
-         var form = new formidable.IncomingForm();
-         form.uploadDir = path.join(__dirname, '../uploads');
-         form.keepExtensions = true;
-         form.multiples = true;
+      function uploadMultimedia(connection, callback) {
+         if(req.header['content-type'] === 'application/x-www-form-urlencoded') {
+            var err = new Error('반드시 동영상은 업로드되어야 합니다.');
+            next(err);
+         } else {
+            //angularjs에서 mp4, avi만 올릴 수 있게 만들기.
+            var form = new formidable.IncomingForm();
+            form.uploadDir = path.join(__dirname, '../uploads');
+            form.keepExtensions = true;
+            form.multiples = true;
 
-         form.parse(req, function(err, fields, files) { //fields에 title, content등등 넘어옴
-            if(files['multimedia'] instanceof Array) {
-               var err = new Error('다중 동영상 업로드는 지원하지 않습니다.');
-               next(err);
-            } else if(!files['multimedia']) {
-               var err = new Error('반드시 동영상은 업로드되어야 합니다.');
-               next(err);
-            } else {
-               var file = files['multimedia'];
+            form.parse(req, function(err, fields, files) { //fields에 title, content등등 넘어옴
+               if(files['multimedia'] instanceof Array) {
+                  var err = new Error('다중 동영상 업로드는 지원하지 않습니다.');
+                  next(err);
+               } else if(!files['multimedia']) {
+                  var err = new Error('반드시 동영상은 업로드되어야 합니다.');
+                  next(err);
+               } else {
+                  var file = files['multimedia'];
 
-               var mimeType = mime.lookup(path.basename(file.path));
+                  var mimeType = mime.lookup(path.basename(file.path));
 
-               var s3 = new AWS.S3({
-                  "accessKeyId" : s3config.key,
-                  "secretAccessKey" : s3config.secret,
-                  "region" : s3config.region,
-                  "params" : {
-                     "Bucket" : s3config.bucket,
-                     "Key" : s3config.multimediaDir + "/" + path.basename(file.path),
-                     "ACL" : s3config.multimediaACL,
-                     "ContentType" : mimeType
-                  }
-               });
-
-               var body = fs.createReadStream(file.path);
-               s3.upload({"Body" : body})
-                  .on('httpUploadProgress', function(event) {
-                     console.log(event);
-                  })
-                  .send(function(err, data) {
-                     if(err) {
-                        console.log(err);
-                        cb(err);
-                     } else {
-                        console.log(data);
-
-                        fs.unlink(file.path, function() {
-                           console.log(file.path + " 파일이 삭제되었습니다.");
-                        });
-
-                        var info = {
-                           "title" : fields.title,
-                           "content" : fields.content,
-                           "company" : fields.company,
-                           "startDate" : fields.startDate,
-                           "endDate" : fields.endDate,
-                           "fileurl" : data.Location,
-                           "originalfilename" : file.name,
-                           "modifiedfilename" : path.basename(file.path),
-                           "filetype" : file.type
-                        };
-
-                        callback(null, info, connection);
+                  var s3 = new AWS.S3({
+                     "accessKeyId" : s3config.key,
+                     "secretAccessKey" : s3config.secret,
+                     "region" : s3config.region,
+                     "params" : {
+                        "Bucket" : s3config.bucket,
+                        "Key" : s3config.multimediaDir + "/" + path.basename(file.path),
+                        "ACL" : s3config.multimediaACL,
+                        "ContentType" : mimeType
                      }
-                  })
-            }
-         })
+                  });
+
+                  var body = fs.createReadStream(file.path);
+                  s3.upload({"Body" : body})
+                     .on('httpUploadProgress', function(event) {
+                        console.log(event);
+                     })
+                     .send(function(err, data) {
+                        if(err) {
+                           console.log(err);
+                           cb(err);
+                        } else {
+                           console.log(data);
+
+                           fs.unlink(file.path, function() {
+                              console.log(file.path + " 파일이 삭제되었습니다.");
+                           });
+
+                           var info = {
+                              "title" : fields.title,
+                              "content" : fields.content,
+                              "company" : fields.company,
+                              "startDate" : fields.startDate,
+                              "endDate" : fields.endDate,
+                              "fileurl" : data.Location,
+                              "originalfilename" : file.name,
+                              "modifiedfilename" : path.basename(file.path),
+                              "filetype" : file.type
+                           };
+
+                           callback(null, info, connection);
+                        }
+                     })
+               }
+            })
+         }
       }
       //epromotion테이블 insert
       function insertEpromotion(info, connection, callback) {
@@ -482,7 +488,7 @@ router.get('/searching', function(req, res, next) {
          page = (isNaN(page))? 1 : page;
          page = (page<1) ? 1 : page;
 
-         limit = 10;
+         limit = parseInt(req.query.limit);
          offset = limit * (page - 1);
 
          if(type === 'title') {

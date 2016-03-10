@@ -35,7 +35,7 @@ router.get('/', function(req, res, next) {
       page = (isNaN(page))? 1 : page;
       page = (page<1) ? 1 : page;
 
-      limit = 10;
+      limit = parseInt(req.query.limit);
       offset = limit * (page - 1);
 
       //안드로이드에서 게시글 번호 붙이기 -> offset과 info.result.list의 인덱스를 이용하여 글 번호를 붙일것.
@@ -244,7 +244,7 @@ router.get('/searching', function(req, res, next) {
       page = (isNaN(page))? 1 : page;
       page = (page < 1)? 1 : page;
 
-      var limit = 10;
+      var limit = parseInt(req.query.limit);
       var offset = limit * (page - 1);
 
       if(type === "title") {

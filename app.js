@@ -17,9 +17,10 @@ var accessterm = require('./routes/accessterm');
 var policies = require('./routes/policies');
 var greenspace = require('./routes/greenspace');
 var background = require('./routes/background');
-var temp = require('./routes/temp');
 var greenplayer = require('./routes/greenplayer');
 var greenshop = require('./routes/greenshop');
+var methodOverride = require('method-override');
+
 var app = express();
 
 // view engine setup
@@ -44,6 +45,7 @@ app.use(session({
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(passport.initialize());
 app.use(passport.session());
+app.use(methodOverride('_method'));
 
 app.use('/auth', auth);
 app.use('/notices', notice);
@@ -52,7 +54,6 @@ app.use('/policies', policies);
 app.use('/accessterms', accessterm);
 app.use('/greenspaces', greenspace);
 app.use('/backgrounds', background);
-app.use('/temp', temp);
 app.use('/greenplayers', greenplayer);
 app.use('/items', greenshop);
 

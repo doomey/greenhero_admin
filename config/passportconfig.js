@@ -15,7 +15,7 @@ module.exports = function(passport) {
             if(err) {
                 done(err);
             } else {
-                var sql = "select id, username, name, google_id, google_email, google_name "+
+                var sql = "select id, username, google_id, google_email,"+ sqlAES.decrypt("name") +" google_name,nickname "+
                           "from iparty " +
                           "where id = ?";
                 connection.query(sql, [id], function(err, results) {
@@ -29,6 +29,7 @@ module.exports = function(passport) {
                             "name" : results[0].name,
                             "nickname" : results[0].nickname
                         };
+                       console.log('유저', user);
                         done(null, user);
                     }
                 });
@@ -54,7 +55,7 @@ module.exports = function(passport) {
         }
         //2. selectpassword
         function selectIparty(connection, callback) {
-            var select = "select id, username, hashpassword, nickname, google_name, " +
+            var select = "select id, username, hashpassword, nickname, "+ sqlAES.decrypt("name") +
                sqlAES.decrypt("google_email", true) +
                    //"convert(aes_decrypt(google_email, unhex(" + connection.escape(serverKey) + ")) using utf8) as gemail " +
                "from greendb.iparty " +
@@ -72,7 +73,7 @@ module.exports = function(passport) {
                             "id" : results[0].id,
                             "hashPassword" : results[0].hashpassword,
                             "email" : results[0].google_email,
-                            "name" : results[0].google_name,
+                            "name" : results[0].name,
                             "nickname" : results[0].nickname
                         };
                         callback(null, user);

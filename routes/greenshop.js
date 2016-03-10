@@ -49,7 +49,7 @@ router.get('/', isLoggedIn, function(req, res, next) {
          page = (isNaN(page))? 1 : page;
          page = (page < 1)? 1 : page;
 
-         limit = 10;
+         limit = parseInt(req.query.limit);
          offset = limit * (page - 1);
 
          var select = "select id, name, description, price, picture, sdate, edate, star, tquantity "+
@@ -106,117 +106,122 @@ router.get('/', isLoggedIn, function(req, res, next) {
 
 router.post('/', isLoggedIn, function(req, res, next) {
    if(req.secure) {
-      var form = new formidable.IncomingForm();
-      form.uploadDir = path.join(__dirname, '../uploads');
-      form.keepExtensions = true;
-      form.multiples = true;
+      if(req.headers['content-type'] === 'application/x-www-form-urlencoded') {
+         var err = new Error('사진을 업로드해야만 합니다...');
+         next(err);
+      } else {
+         var form = new formidable.IncomingForm();
+         form.uploadDir = path.join(__dirname, '../uploads');
+         form.keepExtensions = true;
+         form.multiples = true;
 
-      form.parse(req, function(err, fields, files) {
-         if(files['photo'] instanceof Array) { //파일을 2개 이상 업로드할 경우
-            var err = new Error('1개의 사진만 업로드해야만 합니다...');
-            next(err);
-         } else if(!files['photo']) {
-            var err = new Error('사진을 업로드해야만 합니다...');
-            next(err);
-         } else {
-            var file = files['photo'];
+         form.parse(req, function(err, fields, files) {
+            if(files['photo'] instanceof Array) { //파일을 2개 이상 업로드할 경우
+               var err = new Error('1개의 사진만 업로드해야만 합니다...');
+               next(err);
+            } else if(!files['photo']) {
+               var err = new Error('사진을 업로드해야만 합니다...');
+               next(err);
+            } else {
+               var file = files['photo'];
 
-            var mimeType = mime.lookup(path.basename(file.path));
+               var mimeType = mime.lookup(path.basename(file.path));
 
-            var s3 = new AWS.S3({
-               "accessKeyId" : s3config.key,
-               "secretAccessKey" : s3config.secret,
-               "region" : s3config.region,
-               "params" : {
-                  "Bucket" : s3config.bucket,
-                  "Key" : s3config.bgDir + "/" + path.basename(file.path),
-                  "ACL" : s3config.bgACL,
-                  "ContentType" : mimeType
-               }
-            });
-
-            var body = fs.createReadStream(file.path);
-
-            s3.upload({"Body" : body})
-               .on('httpUploadProgress', function(event) {
-                  console.log(event);
-               })
-               .send(function(err, data) {
-                  if(err) {
-                     console.log(err);
-                     cb(err);
-                  } else {
-                     console.log(data);
-
-                     fs.unlink(file.path, function() {
-                        console.log(file.path + " 파일이 삭제되었습니다...");
-                     });
-
-                     //connection
-                     function getConnection(callback) {
-                        pool.getConnection(function(err, connection) {
-                           if(err) {
-                              callback(err);
-                           } else {
-                              callback(null, connection);
-                           }
-                        });
-                     }
-
-                     //insertGreenitems
-                     function insertGreenitems(connection, callback) {
-                        var insert = "insert into greendb.greenitems(name, description, price, sdate, edate) "+
-                           "values(?, ?, ?, ?, ?)";
-                        connection.query(insert, [fields.name, fields.description, fields.price, fields.startDate, fields.endDate], function(err, result) {
-                           if(err) {
-                              connection.release();
-                              callback(err);
-                           } else {
-                              callback(null, result.insertId, connection);
-                           }
-                        });
-                     }
-
-                     //photos에 insert
-                     function insertPhotos(id, connection, callback) {
-                        var insert = "insert into greendb.photos(photourl, uploaddate, originalfilename, modifiedfilename, phototype, refer_type, refer_id) "+
-                           "values(?, now(), ?, ?, ?, 3, ?)";
-                        connection.query(insert, [data.Location, file.name, path.basename(file.path), file.type, id], function(err, result) {
-                           if(err) {
-                              connection.release();
-                              callback(err);
-                           } else {
-                              var update = "update greendb.greenitems "+
-                                 "set picture = ? "+
-                                 "where id = ?";
-                              connection.query(update, [data.Location, id], function(err, result) {
-                                    connection.release();
-                                    if(err) {
-                                       callback(err);
-                                    } else {
-                                       callback(null, {"message" : "물품을 등록하였습니다."});
-                                    }
-                                 }
-                              );
-                           }
-                        });
-                     }
-
-                     async.waterfall([getConnection, insertGreenitems, insertPhotos], function(err, result) {
-                        if(err) {
-                           err.message = "물품 등록에 실패하였습니다...";
-                           next(err);
-                        }
-                        else {
-                           res.json(result);
-                        }
-
-                     })
-
+               var s3 = new AWS.S3({
+                  "accessKeyId" : s3config.key,
+                  "secretAccessKey" : s3config.secret,
+                  "region" : s3config.region,
+                  "params" : {
+                     "Bucket" : s3config.bucket,
+                     "Key" : s3config.bgDir + "/" + path.basename(file.path),
+                     "ACL" : s3config.bgACL,
+                     "ContentType" : mimeType
                   }
-               })
-         }
-      });
+               });
+
+               var body = fs.createReadStream(file.path);
+
+               s3.upload({"Body" : body})
+                  .on('httpUploadProgress', function(event) {
+                     console.log(event);
+                  })
+                  .send(function(err, data) {
+                     if(err) {
+                        console.log(err);
+                        cb(err);
+                     } else {
+                        console.log(data);
+
+                        fs.unlink(file.path, function() {
+                           console.log(file.path + " 파일이 삭제되었습니다...");
+                        });
+
+                        //connection
+                        function getConnection(callback) {
+                           pool.getConnection(function(err, connection) {
+                              if(err) {
+                                 callback(err);
+                              } else {
+                                 callback(null, connection);
+                              }
+                           });
+                        }
+
+                        //insertGreenitems
+                        function insertGreenitems(connection, callback) {
+                           var insert = "insert into greendb.greenitems(name, description, price, sdate, edate) "+
+                              "values(?, ?, ?, ?, ?)";
+                           connection.query(insert, [fields.name, fields.description, fields.price, fields.startDate, fields.endDate], function(err, result) {
+                              if(err) {
+                                 connection.release();
+                                 callback(err);
+                              } else {
+                                 callback(null, result.insertId, connection);
+                              }
+                           });
+                        }
+
+                        //photos에 insert
+                        function insertPhotos(id, connection, callback) {
+                           var insert = "insert into greendb.photos(photourl, uploaddate, originalfilename, modifiedfilename, phototype, refer_type, refer_id) "+
+                              "values(?, now(), ?, ?, ?, 3, ?)";
+                           connection.query(insert, [data.Location, file.name, path.basename(file.path), file.type, id], function(err, result) {
+                              if(err) {
+                                 connection.release();
+                                 callback(err);
+                              } else {
+                                 var update = "update greendb.greenitems "+
+                                    "set picture = ? "+
+                                    "where id = ?";
+                                 connection.query(update, [data.Location, id], function(err, result) {
+                                       connection.release();
+                                       if(err) {
+                                          callback(err);
+                                       } else {
+                                          callback(null, {"message" : "물품을 등록하였습니다."});
+                                       }
+                                    }
+                                 );
+                              }
+                           });
+                        }
+
+                        async.waterfall([getConnection, insertGreenitems, insertPhotos], function(err, result) {
+                           if(err) {
+                              err.message = "물품 등록에 실패하였습니다...";
+                              next(err);
+                           }
+                           else {
+                              res.json(result);
+                           }
+
+                        })
+
+                     }
+                  })
+            }
+         });
+      }
    } else {
       var err = new Error('SSL/TLS Upgreade Required...');
       err.status = 426;

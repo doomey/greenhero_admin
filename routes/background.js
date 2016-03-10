@@ -64,15 +64,97 @@ router.get('/', isLoggedIn, function(req, res, next) {
 });
 
 router.post('/', isLoggedIn, function(req, res, next) {
-   var form = new formidable.IncomingForm();
-   form.uploadDir = path.join(__dirname, '../uploads');
-   form.keepExtensions = true;
-   form.multiples = true;
+   if(req.headers['content-type'] === 'application/x-www-form-urlencoded') {
+      var err = new Error('배경사진을 업로드해야합니다.');
+      next(err);
+   } else {
+      var form = new formidable.IncomingForm();
+      form.uploadDir = path.join(__dirname, '../uploads');
+      form.keepExtensions = true;
+      form.multiples = true;
 
-   form.parse(req, function(err, fields, files) {
-      var results = [];
-      if(files['background'] instanceof Array) { //파일을 2개 이상 업로드할 경우
-         async.each(files['background'], function(file, cb) {
+      form.parse(req, function(err, fields, files) {
+         var results = [];
+         if(files['background'] instanceof Array) { //파일을 2개 이상 업로드할 경우
+            async.each(files['background'], function(file, cb) {
+               var mimeType = mime.lookup(path.basename(file.path));
+
+               var s3 = new AWS.S3({
+                  "accessKeyId" : s3config.key,
+                  "secretAccessKey" : s3config.secret,
+                  "region" : s3config.region,
+                  "params" : {
+                     "Bucket" : s3config.bucket,
+                     "Key" : s3config.bgDir + "/" + path.basename(file.path),
+                     "ACL" : s3config.bgACL,
+                     "ContentType" : mimeType
+                  }
+               });
+
+               var body = fs.createReadStream(file.path);
+               s3.upload({"Body" : body})
+                  .on('httpUploadProgress', function(event) {
+                     console.log(event);
+                  })
+                  .send(function(err, data) {
+                     if(err) {
+                        console.log(err);
+                        cb(err);
+                     } else {
+                        console.log(data);
+
+                        fs.unlink(file.path, function() {
+                           console.log(file.path + " 파일이 삭제되었습니다...");
+                           results.push({"s3URL" : data.Location});
+                        });
+
+                        function getConnection(callback) {
+                           pool.getConnection(function(err, connection) {
+                              if(err) {
+                                 callback(err);
+                              } else {
+                                 callback(null, connection);
+                              }
+                           });
+                        }
+
+                        function insertBackgrounds(connection, callback) {
+                           var insert = "insert into greendb.background(name, path) "+
+                              "values(?, ?)";
+                           connection.query(insert, [path.basename(file.name, path.extname(file.name)), data.Location], function(err, result) {
+                              connection.release();
+                              if(err) {
+                                 callback(err);
+                              } else {
+                                 callback(null, true);
+                              }
+                           });
+                        }
+
+                        async.waterfall([getConnection, insertBackgrounds], function(err, result) {
+                           if(err) {
+                              next(err);
+                           } else {
+                              cb();
+                           }
+                        });
+
+                     }
+                  });
+               //send함수의 끝
+            }, function(err, result) {
+               if(err) {
+                  err.message = "배경사진 업로드에 실패하였습니다.";
+                  next(err);
+               } else {
+                  res.json(results);
+               }
+            });
+         } else if(!files['background']) {
+            res.json({"s3URL" : null});
+         } else { //배경을 한개만 올린 경우
+            var file = files['background'];
+            console.log("파일 타입 : ", typeof file);
             var mimeType = mime.lookup(path.basename(file.path));
 
             var s3 = new AWS.S3({
@@ -88,6 +170,7 @@ router.post('/', isLoggedIn, function(req, res, next) {
             });
 
             var body = fs.createReadStream(file.path);
+
             s3.upload({"Body" : body})
                .on('httpUploadProgress', function(event) {
                   console.log(event);
@@ -116,7 +199,7 @@ router.post('/', isLoggedIn, function(req, res, next) {
 
                      function insertBackgrounds(connection, callback) {
                         var insert = "insert into greendb.background(name, path) "+
-                                     "values(?, ?)";
+                           "values(?, ?)";
                         connection.query(insert, [path.basename(file.name, path.extname(file.name)), data.Location], function(err, result) {
                            connection.release();
                            if(err) {
@@ -129,96 +212,18 @@ router.post('/', isLoggedIn, function(req, res, next) {
 
                      async.waterfall([getConnection, insertBackgrounds], function(err, result) {
                         if(err) {
+                           err.message = "배경사진 업로드에 실패하였습니다.";
                            next(err);
                         } else {
-                           cb();
+                           res.json({ "s3URL" : data.Location });
                         }
                      });
 
                   }
                });
-            //send함수의 끝
-         }, function(err, result) {
-            if(err) {
-               err.message = "배경사진 업로드에 실패하였습니다.";
-               next(err);
-            } else {
-               res.json(results);
-            }
-         });
-      } else if(!files['background']) { //배경을 올리지 않은 경우
-         res.json({"s3URL" : null});
-      } else { //배경을 한개만 올린 경우
-         var file = files['background'];
-         console.log("파일 타입 : ", typeof file);
-         var mimeType = mime.lookup(path.basename(file.path));
-
-         var s3 = new AWS.S3({
-            "accessKeyId" : s3config.key,
-            "secretAccessKey" : s3config.secret,
-            "region" : s3config.region,
-            "params" : {
-               "Bucket" : s3config.bucket,
-               "Key" : s3config.bgDir + "/" + path.basename(file.path),
-               "ACL" : s3config.bgACL,
-               "ContentType" : mimeType
-            }
-         });
-
-         var body = fs.createReadStream(file.path);
-
-         s3.upload({"Body" : body})
-            .on('httpUploadProgress', function(event) {
-               console.log(event);
-            })
-            .send(function(err, data) {
-               if(err) {
-                  console.log(err);
-                  cb(err);
-               } else {
-                  console.log(data);
-
-                  fs.unlink(file.path, function() {
-                     console.log(file.path + " 파일이 삭제되었습니다...");
-                     results.push({"s3URL" : data.Location});
-                  });
-
-                  function getConnection(callback) {
-                     pool.getConnection(function(err, connection) {
-                        if(err) {
-                           callback(err);
-                        } else {
-                           callback(null, connection);
-                        }
-                     });
-                  }
-
-                  function insertBackgrounds(connection, callback) {
-                     var insert = "insert into greendb.background(name, path) "+
-                        "values(?, ?)";
-                     connection.query(insert, [path.basename(file.name, path.extname(file.name)), data.Location], function(err, result) {
-                        connection.release();
-                        if(err) {
-                           callback(err);
-                        } else {
-                           callback(null, true);
-                        }
-                     });
-                  }
-
-                  async.waterfall([getConnection, insertBackgrounds], function(err, result) {
-                     if(err) {
-                        err.message = "배경사진 업로드에 실패하였습니다.";
-                        next(err);
-                     } else {
-                        res.json({ "s3URL" : data.Location });
-                     }
-                  });
-
-               }
-            });
-      }
-   });
+         }
+      });
+   }
 });
 
 router.delete('/', isLoggedIn, function(req, res, next) {
