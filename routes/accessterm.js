@@ -17,7 +17,7 @@ router.get('/', function(req, res, next) {
    //2. 전체 게시글 갯수 count(id)
    function getTotal(connection, callback) {
       var select = "select count(id) as cnt "+
-         "from greendb.article "+
+         "from article "+
          "where board_id = 2";
       connection.query(select, [], function(err, results) {
          if(err) {
@@ -39,7 +39,7 @@ router.get('/', function(req, res, next) {
       var offset = limit * (page - 1);
 
       var select = "select id, title, body, date_format(CONVERT_TZ(now(), '+00:00', '+9:00'), '%Y-%m-%d %H:%i:%s') as wdatetime "+
-                   "from greendb.article "+
+                   "from article "+
                    "where board_id = 2 "+
                    "order by id desc limit ? offset ?";
       connection.query(select, [limit, offset] , function(err, results) {
@@ -113,7 +113,7 @@ router.post('/', function(req, res, next) {
    }
    //게시글 쓰기
    function insertAccessterm(connection, callback) {
-      var insert = "insert into greendb.article(title, body, wdatetime, board_id) "+
+      var insert = "insert into article(title, body, wdatetime, board_id) "+
                    "values(?, ?, now(), 2)";
       connection.query(insert, [title, content], function(err, result) {
             if (err) {
@@ -151,7 +151,7 @@ router.put('/', function(req, res, next) {
    }
    //게시글 수정
    function updateAccessterm(connection, callback) {
-      var update = "update greendb.article "+
+      var update = "update article "+
                     "set title = ?, "+
                     "    body = ?, "+
                     "    wdatetime = now() "+
@@ -191,7 +191,7 @@ router.delete('/', function(req, res, next) {
    }
    //게시글 삭제
    function deleteAccessterm(connection, callback) {
-      var deleteSql = "delete from greendb.article "+
+      var deleteSql = "delete from article "+
                       "where board_id = 2";
       connection.query(deleteSql, [], function(err, result) {
             if (err) {
@@ -229,7 +229,7 @@ router.get('/searching', function(req, res, next) {
    //2. get total
    function getTotal(connection, callback) {
       var select = "select count(id) as cnt "+
-         "from greendb.article "+
+         "from article "+
          "where board_id = 2";
       connection.query(select, [], function(err, results) {
          if(err) {
@@ -254,7 +254,7 @@ router.get('/searching', function(req, res, next) {
 
       if(type === "title") {
          select = "select id, title, body, date_format(CONVERT_TZ(wdatetime, '+00:00', '+9:00'), '%Y-%m-%d %H:%i:%s') as wdatetime "+
-            "from greendb.article "+
+            "from article "+
             "where board_id = 2 and title like ? "+
             "order by id desc limit ? offset ?";
 
@@ -301,7 +301,7 @@ router.get('/searching', function(req, res, next) {
 
       if(type === "body") {
          select = "select id, title, body, date_format(CONVERT_TZ(wdatetime, '+00:00', '+9:00'), '%Y-%m-%d %H:%i:%s') as wdatetime "+
-            "from greendb.article "+
+            "from article "+
             "where board_id = 2 and body like ? "+
             "order by id desc limit ? offset ?";
 

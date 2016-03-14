@@ -7,6 +7,7 @@ var s3config = require('../config/s3config');
 var fs = require('fs');
 var mime = require('mime');
 var path = require('path');
+var ffmpeg = require('fluent-ffmpeg');
 
 function isLoggedIn(req, res, next) {//
    if(!req.isAuthenticated()) {
@@ -50,7 +51,7 @@ router.get('/', isLoggedIn, function(req, res, next) {
          page = (isNaN(page))? 1 : page;
          page = (page<1) ? 1 : page;
 
-         limit = parseInt(req.query.limit);
+         limit = parseInt(req.query.limit) || 10;
          offset = limit * (page - 1);
 
          //안드로이드에서 게시글 번호 붙이기 -> offset과 info.result.list의 인덱스를 이용하여 글 번호를 붙일것.
@@ -120,98 +121,84 @@ router.post('/', isLoggedIn, function(req, res, next) {
             }
          })
       }
-      //동영상 업로드
-      function uploadMultimedia(connection, callback) {
+
+      function uploadFiles(connection, callback) {
          if(req.header['content-type'] === 'application/x-www-form-urlencoded') {
             var err = new Error('반드시 동영상은 업로드되어야 합니다.');
-            next(err);
+            callback(err);
          } else {
-            //angularjs에서 mp4, avi만 올릴 수 있게 만들기.
             var form = new formidable.IncomingForm();
             form.uploadDir = path.join(__dirname, '../uploads');
             form.keepExtensions = true;
-            form.multiples = true;
+            form.multiples = false;
 
-            form.parse(req, function(err, fields, files) { //fields에 title, content등등 넘어옴
-               if(files['multimedia'] instanceof Array) {
-                  var err = new Error('다중 동영상 업로드는 지원하지 않습니다.');
-                  next(err);
-               } else if(!files['multimedia']) {
-                  var err = new Error('반드시 동영상은 업로드되어야 합니다.');
-                  next(err);
+            form.parse(req, function(err, fields, files) {
+               if (err) {
+                  callback(err);
                } else {
-                  var file = files['multimedia'];
+                  if(!files['multimedia']) {
+                     var err = new Error('반드시 동영상은 업로드되어야 합니다.');
+                     next(err);
+                  } else {
+                     var file = files['multimedia'];
 
-                  var mimeType = mime.lookup(path.basename(file.path));
+                     var mimeType = mime.lookup(path.basename(file.path));
 
-                  var s3 = new AWS.S3({
-                     "accessKeyId" : s3config.key,
-                     "secretAccessKey" : s3config.secret,
-                     "region" : s3config.region,
-                     "params" : {
-                        "Bucket" : s3config.bucket,
-                        "Key" : s3config.multimediaDir + "/" + path.basename(file.path),
-                        "ACL" : s3config.multimediaACL,
-                        "ContentType" : mimeType
-                     }
-                  });
-
-                  var body = fs.createReadStream(file.path);
-                  s3.upload({"Body" : body})
-                     .on('httpUploadProgress', function(event) {
-                        console.log(event);
-                     })
-                     .send(function(err, data) {
-                        if(err) {
-                           console.log(err);
-                           cb(err);
-                        } else {
-                           console.log(data);
-
-                           fs.unlink(file.path, function() {
-                              console.log(file.path + " 파일이 삭제되었습니다.");
-                           });
-
-                           var info = {
-                              "title" : fields.title,
-                              "content" : fields.content,
-                              "company" : fields.company,
-                              "startDate" : fields.startDate,
-                              "endDate" : fields.endDate,
-                              "fileurl" : data.Location,
-                              "originalfilename" : file.name,
-                              "modifiedfilename" : path.basename(file.path),
-                              "filetype" : file.type
-                           };
-
-                           callback(null, info, connection);
+                     var s3 = new AWS.S3({
+                        "accessKeyId" : s3config.key,
+                        "secretAccessKey" : s3config.secret,
+                        "region" : s3config.region,
+                        "params" : {
+                           "Bucket" : s3config.bucket,
+                           "Key" : s3config.multimediaDir + "/" + path.basename(file.path),
+                           "ACL" : s3config.multimediaACL,
+                           "ContentType" : mimeType
                         }
-                     })
+                     });
+
+                     var body = fs.createReadStream(file.path);
+                     s3.upload({"Body" : body})
+                        .on('httpUploadProgress', function(event) {
+                           console.log(event);
+                        })
+                        .send(function(err, data) {
+                           if(err) {
+                              console.log(err);
+                              callback(err);
+                           } else {
+                              console.log(data);
+
+                              var proc = new ffmpeg(file.path)
+                                 .output('screenshot.jpg')
+                                 .takeScreenshots({
+                                    "count" : 1,
+                                    "timemarks" : ['00:00:10.000'],
+                                    "filename" : path.basename(path.basename(file.path), path.extname(path.basename(file.path)))+'.jpg'
+                                 }, path.join(__dirname, '../uploads'), function(err) {
+                                    if(!err) {
+                                       console.log('screenshots were saved');
+                                    }
+                                 })
+                           }
+                        });
+
+                     callback(null, {"message" : "동영상 업로드 및 썸네일 생성 완료"});
+                  }
                }
-            })
+            });
          }
       }
-      //epromotion테이블 insert
-      function insertEpromotion(info, connection, callback) {
-         var insert = "insert into greendb.epromotion(title, cname, sdate, edate, content, iparty_id, fileurl, uploaddate, originalfilename, modifiedfilename, filetype) "+
-            "values(?, ?, ?, ?, ?, ?, ?, now(), ?, ?, ?)";
-         connection.query(insert, [info.title, info.company, info.startDate, info.endDate, info.content, 1, info.fileurl, info.originalfilename, info.modifiedfilename, info.filetype], function(err, result) { //로그인필요
-            connection.release();
-            if(err) {
-               callback(err);
-            } else {
-               callback(null, {"message" : "greenplayer에 글을 작성하였습니다."});
-            }
-         })
-      }
-      async.waterfall([getConnection, uploadMultimedia, insertEpromotion], function(err, result) {
+
+      async.waterfall([getConnection, uploadFiles], function(err, message) {
          if(err) {
-            err.message = "글 작성에 실패하였습니다.";
             next(err);
          } else {
-            res.json(result);
+            res.json(message) //임시
          }
-      });
+      })
+
+
+
    } else {
       var err = new Error('SSL/TLS Upgreade Required...');
       err.status = 426;
@@ -248,7 +235,6 @@ router.put('/:articleid', isLoggedIn, function(req, res, next) {
                connection.release();
                callback(err);
             } else {
-               console.log('리저트 : ', results[0]);
                callback(null, results[0], connection);
             }
          });
@@ -330,9 +316,9 @@ router.put('/:articleid', isLoggedIn, function(req, res, next) {
                      } else {
                         console.log(data);
 
-                        fs.unlink(file.path, function() {
-                           console.log(file.path + " 파일이 삭제되었습니다...");
-                        })
+                        //fs.unlink(file.path, function() {
+                        //   console.log(file.path + " 파일이 삭제되었습니다...");
+                        //})
 
                         var update = "update greendb.epromotion "+
                            "set fileurl = ?, "+

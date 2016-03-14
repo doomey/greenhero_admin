@@ -3,7 +3,7 @@ var config = {
     "port": process.env.GREEN_DB_PORT,
     "user": process.env.GREEN_DB_USERNAME,
     "password": process.env.GREEN_DB_PASSWORD,
-    "database": process.env.GREEN_DB,
+    "database": process.env.GREEN_DB2,
     "ssl": "Amazon RDS",
     "debug": true
 }

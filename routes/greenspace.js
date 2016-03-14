@@ -47,12 +47,12 @@ router.get('/', isLoggedIn, function(req, res, next) {
          page = (isNaN(page))? 1 : page;
          page = (page < 1) ?  1 : page;
 
-         var limit = parseInt(req.query.limit);
+         var limit = parseInt(req.query.limit) || 10;
          var offset = limit * (page - 1);
 
          var select = "select e.id as eid, i.nickname as nickname, e.title as title, e.content as body, e.heart as heart, date_format(CONVERT_TZ(e.wdatetime,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as wdatetime "+
-            "from greendb.e_diary e join greendb.iparty i on (e.iparty_id = i.id) "+
-            "order by eid desc limit ? offset ?";
+            "from greendb.e_diary e join iparty i on (e.iparty_id = i.id) "+
+            "order by e.id desc limit ? offset ?";
          connection.query(select, [limit, offset], function(err, results) {
             connection.release();
             if(err) {
@@ -133,7 +133,7 @@ router.get('/searching', isLoggedIn, function(req, res, next) {
          page = (isNaN(page)) ? 1 : page;
          page = (page < 1) ? 1 : page;
 
-         limit = parseInt(req.query.limit);
+         limit = parseInt(req.query.limit) || 10;
          offset = limit * (page - 1);
 
          if (type === 'title') {
@@ -281,7 +281,6 @@ router.get('/:articleid', isLoggedIn, function(req, res, next) {
             "from greendb.e_diary e join greendb.iparty i on (e.iparty_id = i.id) "+
             "where e.id = ?";
          connection.query(select, [articleid], function(err, results) {
-            console.log('리저츠 :', results);
                if (err) {
                   connection.release();
                   callback(err);
