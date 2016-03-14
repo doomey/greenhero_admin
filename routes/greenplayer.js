@@ -175,7 +175,9 @@ router.post('/', isLoggedIn, function(req, res, next) {
                                     "timemarks" : ['00:00:10.000'],
                                     "filename" : path.basename(path.basename(file.path), path.extname(path.basename(file.path)))+'.jpg'
                                  }, path.join(__dirname, '../uploads'), function(err) {
-                                    if(!err) {
+                                    if(err) {
+                                       console.log('Error');
+                                    } else {
                                        console.log('screenshots were saved');
                                     }
                                  })
