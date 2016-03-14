@@ -7,7 +7,6 @@ var s3config = require('../config/s3config');
 var fs = require('fs');
 var mime = require('mime');
 var path = require('path');
-var ffmpeg = require('fluent-ffmpeg');
 
 function isLoggedIn(req, res, next) {//
    if(!req.isAuthenticated()) {
@@ -34,7 +33,7 @@ router.get('/', isLoggedIn, function(req, res, next) {
       //get total
       function getTotal(connection, callback) {
          var select = "select count(id) as cnt "+
-            "from greendb.epromotion";
+            "from epromotion";
          connection.query(select, [], function(err, results) {
             if(err) {
                connection.release();
@@ -56,11 +55,11 @@ router.get('/', isLoggedIn, function(req, res, next) {
 
          //안드로이드에서 게시글 번호 붙이기 -> offset과 info.result.list의 인덱스를 이용하여 글 번호를 붙일것.
          var select = "select id, title, cname, sdate, edate, fileurl, date_format(CONVERT_TZ(uploaddate,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as uploaddate, originalfilename, modifiedfilename, filetype, content "+
-            "from greendb.epromotion "+
+            "from epromotion "+
             "order by id desc limit ? offset ?";
          connection.query(select, [limit, offset] , function(err, results) {
-            connection.release();
             if(err) {
+               connection.release();
                callback(err);
             } else {
                var info = {
@@ -86,8 +85,11 @@ router.get('/', isLoggedIn, function(req, res, next) {
                      "filetype" : item.filetype
                   });
                }, function(err) {
-                  if(err)
+                  if(err) {
                      callback(err);
+                  } else {
+                     connection.release();
+                  }
                });
                callback(null, info);
             }
@@ -168,34 +170,52 @@ router.post('/', isLoggedIn, function(req, res, next) {
                            } else {
                               console.log(data);
 
-                              var proc = new ffmpeg(file.path)
-                                 .output('screenshot.jpg')
-                                 .takeScreenshots({
-                                    "count" : 1,
-                                    "timemarks" : ['00:00:10.000'],
-                                    "filename" : path.basename(path.basename(file.path), path.extname(path.basename(file.path)))+'.jpg'
-                                 }, path.join(__dirname, '../uploads'), function(err) {
-                                    if(err) {
-                                       console.log('Error');
-                                    } else {
-                                       console.log('screenshots were saved');
-                                    }
-                                 })
+                              var info = {
+                                 "title" : fields.title,
+                                 "content" : fields.content,
+                                 "company" : fields.company,
+                                 "startDate" : fields.startDate,
+                                 "endDate" : fields.endDate,
+                                 "fileurl" : data.Location,
+                                 "originalfilename" : file.name,
+                                 "modifiedfilename" : path.basename(file.path),
+                                 "filetype" : file.type
+                              };
+
+                              console.log('인포', info);
+                              callback(null, info, connection);
+                              fs.unlink(file.path, function() {
+                                 console.log('동영상 삭제 완료');
+                              });
                            }
                         });
 
-                     callback(null, {"message" : "동영상 업로드 및 썸네일 생성 완료"});
+
                   }
                }
             });
          }
       }
 
-      async.waterfall([getConnection, uploadFiles], function(err, message) {
+      function insertEpromotion(info, connection, callback) {
+         var insert = "insert into epromotion(title, cname, sdate, edate, content, iparty_id, fileurl, uploaddate, originalfilename, modifiedfilename, filetype) "+
+            "values(?, ?, ?, ?, ?, ?, ?, now(), ?, ?, ?)";
+         connection.query(insert, [info.title, info.company, info.startDate, info.endDate, info.content, 1, info.fileurl, info.originalfilename, info.modifiedfilename, info.filetype], function(err, result) { //로그인필요
+            connection.release();
+            if(err) {
+               callback(err);
+            } else {
+               var orderId = result.insertId;
+               callback(null, {"message" : "글이 정상적으로 저장되었습니다."})
+            }
+         })
+      }
+
+      async.waterfall([getConnection, uploadFiles, insertEpromotion], function(err, message) {
          if(err) {
             next(err);
          } else {
-            res.json(message) //임시
+            res.json(message)
          }
       })
 
@@ -230,7 +250,7 @@ router.put('/:articleid', isLoggedIn, function(req, res, next) {
       //2.selectEpromotion
       function selectEpromotion(connection, callback) {
          var select = "select fileurl, modifiedfilename as filename "+
-            "from greendb.epromotion "+
+            "from epromotion "+
             "where id = ?";
          connection.query(select, [articleid], function(err, results) {
             if(err) {
@@ -322,7 +342,7 @@ router.put('/:articleid', isLoggedIn, function(req, res, next) {
                         //   console.log(file.path + " 파일이 삭제되었습니다...");
                         //})
 
-                        var update = "update greendb.epromotion "+
+                        var update = "update epromotion "+
                            "set fileurl = ?, "+
                            "    uploaddate = now(), "+
                            "    originalfilename = ?, "+
@@ -376,7 +396,7 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
       //selectEpromotion해서 fileurl불러오기
       function selectEpromotion(connection, callback) {
          var select = "select fileurl " +
-            "from greendb.epromotion " +
+            "from epromotion " +
             "where id = ?";
          connection.query(select, [articleid], function (err, results) {
             if (err) {
@@ -415,7 +435,7 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
 
       //deleteEpromotion
       function deleteEpromotion(connection, callback) {
-         var deleteSql = "delete from greendb.epromotion " +
+         var deleteSql = "delete from epromotion " +
             "where id = ?";
          connection.query(deleteSql, [articleid], function (err, result) {
             connection.release();
@@ -457,7 +477,7 @@ router.get('/searching', function(req, res, next) {
       //2. get total
       function getTotal(connection, callback) {
          var select = "select count(id) as cnt "+
-            "from greendb.epromotion";
+            "from epromotion";
          connection.query(select, [], function(err, results) {
             if(err) {
                connection.release();
@@ -481,7 +501,7 @@ router.get('/searching', function(req, res, next) {
 
          if(type === 'title') {
             var select = "select id, title, cname, sdate, edate, fileurl, date_format(CONVERT_TZ(uploaddate,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as uploaddate, originalfilename, modifiedfilename, filetype, content "+
-               "from greendb.epromotion "+
+               "from epromotion "+
                "where title like ? "+
                "order by id desc limit ? offset ?";
             connection.query(select, [search, limit, offset] , function(err, results) {
@@ -521,7 +541,7 @@ router.get('/searching', function(req, res, next) {
          }
          if(type === 'cname') {
             var select = "select id, title, cname, sdate, edate, fileurl, date_format(CONVERT_TZ(uploaddate,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as uploaddate, originalfilename, modifiedfilename, filetype, content "+
-               "from greendb.epromotion "+
+               "from epromotion "+
                "where cname like ? "+
                "order by id desc limit ? offset ?";
             connection.query(select, [search, limit, offset] , function(err, results) {
