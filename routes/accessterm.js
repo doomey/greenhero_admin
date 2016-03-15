@@ -249,7 +249,7 @@ router.get('/searching', function(req, res, next) {
       page = (isNaN(page))? 1 : page;
       page = (page < 1)? 1 : page;
 
-      var limit = parseInt(req.query.limit);
+      var limit = parseInt(req.query.limit) || 10;
       var offset = limit * (page - 1);
 
       if(type === "title") {

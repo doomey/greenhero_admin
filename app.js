@@ -42,7 +42,7 @@ app.use(session({
   "resave" : true,
   "saveUninitialized" : true
 }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'uploads')));
 app.use(passport.initialize());
 app.use(passport.session());
 app.use(methodOverride('_method'));
@@ -56,6 +56,7 @@ app.use('/greenspaces', greenspace);
 app.use('/backgrounds', background);
 app.use('/greenplayers', greenplayer);
 app.use('/items', greenshop);
+
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {

@@ -17,7 +17,7 @@ router.get('/', function(req, res, next) {
    //2. 전체 게시글 갯수 count(id)
    function getTotal(connection, callback) {
       var select = "select count(id) as cnt "+
-                   "from greendb.article "+
+                   "from article "+
                    "where board_id = 4";
       connection.query(select, [], function(err, results) {
          if(err) {
@@ -35,12 +35,12 @@ router.get('/', function(req, res, next) {
       page = (isNaN(page))? 1 : page;
       page = (page<1) ? 1 : page;
 
-      limit = parseInt(req.query.limit);
+      limit = parseInt(req.query.limit) || 10;
       offset = limit * (page - 1);
 
       //안드로이드에서 게시글 번호 붙이기 -> offset과 info.result.list의 인덱스를 이용하여 글 번호를 붙일것.
       var select = "select id, title, body, date_format(CONVERT_TZ(now(), '+00:00', '+9:00'), '%Y-%m-%d %H:%i:%s') as wdatetime "+
-                   "from greendb.article "+
+                   "from article "+
                    "where board_id = 4 "+
                    "order by id desc limit ? offset ?";
       connection.query(select, [limit, offset] , function(err, results) {
@@ -102,7 +102,7 @@ router.post('/', function(req, res, next) {
    }
    //게시글 쓰기
    function insertPolicy(connection, callback) {
-      var insert = "insert into greendb.article(title, body, wdatetime, board_id) "+
+      var insert = "insert into article(title, body, wdatetime, board_id) "+
                    "values(?, ?, now(), 4)";
       connection.query(insert, [title, content], function(err, result) {
             if (err) {
@@ -144,7 +144,7 @@ router.put('/:articleid', function(req, res, next) {
    }
    //게시글 수정
    function updateNotice(connection, callback) {
-      var update = "update greendb.article "+
+      var update = "update article "+
                     "set title = ?, "+
                     "    body = ?, "+
                     "    wdatetime = now() "+
@@ -186,7 +186,7 @@ router.delete('/:articleid', function(req, res, next) {
    }
    //게시글 삭제
    function deletePolicy(connection, callback) {
-      var deleteSql = "delete from greendb.article "+
+      var deleteSql = "delete from article "+
                       "where id = ?";
       connection.query(deleteSql, [articleid], function(err, result) {
             if (err) {
@@ -224,7 +224,7 @@ router.get('/searching', function(req, res, next) {
    //2. get total
    function getTotal(connection, callback) {
       var select = "select count(id) as cnt "+
-         "from greendb.article "+
+         "from article "+
          "where board_id = 4";
       connection.query(select, [], function(err, results) {
          if(err) {
@@ -244,12 +244,12 @@ router.get('/searching', function(req, res, next) {
       page = (isNaN(page))? 1 : page;
       page = (page < 1)? 1 : page;
 
-      var limit = parseInt(req.query.limit);
+      var limit = parseInt(req.query.limit) || 10;
       var offset = limit * (page - 1);
 
       if(type === "title") {
          var select = "select id, title, body, date_format(CONVERT_TZ(now(), '+00:00', '+9:00'), '%Y-%m-%d %H:%i:%s') as wdatetime "+
-            "from greendb.article "+
+            "from article "+
             "where board_id = 4 and title like ?"+
             "order by id desc limit ? offset ?";
          connection.query(select, [search, limit, offset] , function(err, results) {
@@ -285,7 +285,7 @@ router.get('/searching', function(req, res, next) {
 
       if(type === "body") {
          var select = "select id, title, body, date_format(CONVERT_TZ(now(), '+00:00', '+9:00'), '%Y-%m-%d %H:%i:%s') as wdatetime "+
-            "from greendb.article "+
+            "from article "+
             "where board_id = 4 and body like ?"+
             "order by id desc limit ? offset ?";
          connection.query(select, [search, limit, offset] , function(err, results) {

@@ -33,7 +33,7 @@ router.get('/', isLoggedIn, function(req, res, next) {
       //selectTotal
       function selectTotal(connection, callback) {
          var select = "select count(id) as cnt "+
-            "from greendb.greenitems";
+            "from greenitems";
          connection.query(select, [], function(err, results) {
             if(err) {
                connection.release();
@@ -49,11 +49,11 @@ router.get('/', isLoggedIn, function(req, res, next) {
          page = (isNaN(page))? 1 : page;
          page = (page < 1)? 1 : page;
 
-         limit = parseInt(req.query.limit);
+         limit = parseInt(req.query.limit) || 10;
          offset = limit * (page - 1);
 
-         var select = "select id, name, description, price, picture, sdate, edate, star, tquantity "+
-            "from greendb.greenitems "+
+         var select = "select id, name, description, price, sdate, edate, star, tquantity "+
+            "from greenitems "+
             "order by id desc limit ? offset ?";
          connection.query(select, [limit, offset], function(err, results) {
             connection.release();
@@ -67,16 +67,26 @@ router.get('/', isLoggedIn, function(req, res, next) {
                };
 
                async.each(results, function(result, cb) {
-                  info.items.push({
-                     "id" : result.id,
-                     "name" : result.name,
-                     "picture" : result.picture,
-                     "star" : result.star,
-                     "price" : result.price,
-                     "itemCount" : result.tquantity,
-                     "itemDescription" : result.description
-                  });
-                  cb(null);
+                  var select = "select photourl "+
+                               "from photos "+
+                               "where refer_id = ? and refer_type = 3";
+                  connection.query(select, [result.id], function(err, results) {
+                     if(err) {
+                        connection.release();
+                        cb(err);
+                     } else {
+                        info.items.push({
+                           "id" : result.id,
+                           "name" : result.name,
+                           "picture" : results[0].photourl,
+                           "star" : result.star,
+                           "price" : result.price,
+                           "itemCount" : result.tquantity,
+                           "itemDescription" : result.description
+                        });
+                        cb(null);
+                     }
+                  })
                }, function(err) {
                   if(err) {
                      callback(err);
@@ -113,112 +123,102 @@ router.post('/', isLoggedIn, function(req, res, next) {
          var form = new formidable.IncomingForm();
          form.uploadDir = path.join(__dirname, '../uploads');
          form.keepExtensions = true;
-         form.multiples = true;
+         form.multiples = false;
 
          form.parse(req, function(err, fields, files) {
-            if(files['photo'] instanceof Array) { //파일을 2개 이상 업로드할 경우
-               var err = new Error('1개의 사진만 업로드해야만 합니다...');
-               next(err);
-            } else if(!files['photo']) {
-               var err = new Error('사진을 업로드해야만 합니다...');
+            if(err) {
                next(err);
             } else {
-               var file = files['photo'];
+               if(!files['photo']) {
+                  var err = new Error('사진을 업로드해야만 합니다...');
+                  next(err);
+               } else {
+                  var file = files['photo'];
 
-               var mimeType = mime.lookup(path.basename(file.path));
+                  var mimeType = mime.lookup(path.basename(file.path));
 
-               var s3 = new AWS.S3({
-                  "accessKeyId" : s3config.key,
-                  "secretAccessKey" : s3config.secret,
-                  "region" : s3config.region,
-                  "params" : {
-                     "Bucket" : s3config.bucket,
-                     "Key" : s3config.bgDir + "/" + path.basename(file.path),
-                     "ACL" : s3config.bgACL,
-                     "ContentType" : mimeType
-                  }
-               });
-
-               var body = fs.createReadStream(file.path);
-
-               s3.upload({"Body" : body})
-                  .on('httpUploadProgress', function(event) {
-                     console.log(event);
-                  })
-                  .send(function(err, data) {
-                     if(err) {
-                        console.log(err);
-                        cb(err);
-                     } else {
-                        console.log(data);
-
-                        fs.unlink(file.path, function() {
-                           console.log(file.path + " 파일이 삭제되었습니다...");
-                        });
-
-                        //connection
-                        function getConnection(callback) {
-                           pool.getConnection(function(err, connection) {
-                              if(err) {
-                                 callback(err);
-                              } else {
-                                 callback(null, connection);
-                              }
-                           });
-                        }
-
-                        //insertGreenitems
-                        function insertGreenitems(connection, callback) {
-                           var insert = "insert into greendb.greenitems(name, description, price, sdate, edate) "+
-                              "values(?, ?, ?, ?, ?)";
-                           connection.query(insert, [fields.name, fields.description, fields.price, fields.startDate, fields.endDate], function(err, result) {
-                              if(err) {
-                                 connection.release();
-                                 callback(err);
-                              } else {
-                                 callback(null, result.insertId, connection);
-                              }
-                           });
-                        }
-
-                        //photos에 insert
-                        function insertPhotos(id, connection, callback) {
-                           var insert = "insert into greendb.photos(photourl, uploaddate, originalfilename, modifiedfilename, phototype, refer_type, refer_id) "+
-                              "values(?, now(), ?, ?, ?, 3, ?)";
-                           connection.query(insert, [data.Location, file.name, path.basename(file.path), file.type, id], function(err, result) {
-                              if(err) {
-                                 connection.release();
-                                 callback(err);
-                              } else {
-                                 var update = "update greendb.greenitems "+
-                                    "set picture = ? "+
-                                    "where id = ?";
-                                 connection.query(update, [data.Location, id], function(err, result) {
-                                       connection.release();
-                                       if(err) {
-                                          callback(err);
-                                       } else {
-                                          callback(null, {"message" : "물품을 등록하였습니다."});
-                                       }
-                                    }
-                                 );
-                              }
-                           });
-                        }
-
-                        async.waterfall([getConnection, insertGreenitems, insertPhotos], function(err, result) {
-                           if(err) {
-                              err.message = "물품 등록에 실패하였습니다...";
-                              next(err);
-                           }
-                           else {
-                              res.json(result);
-                           }
-
-                        })
-
+                  var s3 = new AWS.S3({
+                     "accessKeyId" : s3config.key,
+                     "secretAccessKey" : s3config.secret,
+                     "region" : s3config.region,
+                     "params" : {
+                        "Bucket" : s3config.bucket,
+                        "Key" : s3config.bgDir + "/" + path.basename(file.path),
+                        "ACL" : s3config.bgACL,
+                        "ContentType" : mimeType
                      }
-                  })
+                  });
+
+                  var body = fs.createReadStream(file.path);
+
+                  s3.upload({"Body" : body})
+                     .on('httpUploadProgress', function(event) {
+                        console.log(event);
+                     })
+                     .send(function(err, data) {
+                        if(err) {
+                           console.log(err);
+                           cb(err);
+                        } else {
+                           console.log(data);
+
+                           fs.unlink(file.path, function() {
+                              console.log(file.path + " 파일이 삭제되었습니다...");
+                           });
+
+                           //connection
+                           function getConnection(callback) {
+                              pool.getConnection(function(err, connection) {
+                                 if(err) {
+                                    callback(err);
+                                 } else {
+                                    callback(null, connection);
+                                 }
+                              });
+                           }
+
+                           //insertGreenitems
+                           function insertGreenitems(connection, callback) {
+                              var insert = "insert into greenitems(name, description, price, sdate, edate) "+
+                                 "values(?, ?, ?, ?, ?)";
+                              connection.query(insert, [fields.name || "", fields.description || "", fields.price || "", fields.startDate || "", fields.endDate || ""], function(err, result) {
+                                 if(err) {
+                                    connection.release();
+                                    callback(err);
+                                 } else {
+                                    callback(null, result.insertId, connection);
+                                 }
+                              });
+                           }
+
+                           //photos에 insert
+                           function insertPhotos(id, connection, callback) {
+                              var insert = "insert into photos(photourl, uploaddate, originalfilename, modifiedfilename, phototype, refer_type, refer_id) "+
+                                 "values(?, now(), ?, ?, ?, 3, ?)";
+                              connection.query(insert, [data.Location, file.name, path.basename(file.path), file.type, id], function(err, result) {
+                                 connection.release();
+                                 if(err) {
+                                    callback(err);
+                                 } else {
+                                    callback(null, {"message" : "물품을 등록하였습니다."});
+                                 }
+                              });
+                           }
+
+                           async.waterfall([getConnection, insertGreenitems, insertPhotos], function(err, result) {
+                              if(err) {
+                                 err.message = "물품 등록에 실패하였습니다...";
+                                 next(err);
+                              }
+                              else {
+                                 res.json(result);
+                              }
+
+                           })
+
+                        }
+                     })
+               }
             }
          });
       }
@@ -247,15 +247,15 @@ router.put('/:articleid', isLoggedIn, function(req, res, next) {
       //2.selectGreenitems
       function selectGreenitems(connection, callback) {
 
-         var select = "select picture "+
-            "from greendb.greenitems "+
-            "where id = ?";
+         var select = "select photourl "+
+            "from photos "+
+            "where refer_type = 3 and refer_id = ?";
          connection.query(select, [articleid], function(err, results) {
             if(err) {
                connection.release();
                callback(err);
             } else {
-               callback(null, results[0].picture, connection);
+               callback(null, results[0].photourl, connection);
             }
          });
       }
@@ -265,7 +265,7 @@ router.put('/:articleid', isLoggedIn, function(req, res, next) {
          var form = new formidable.IncomingForm();
          form.uploadDir = path.join(__dirname, '../uploads');
          form.keepExtensions = true;
-         form.multiples = true;
+         form.multiples = false;
 
          form.parse(req, function(err, fields, files) {
             var name = fields.name;
@@ -273,81 +273,89 @@ router.put('/:articleid', isLoggedIn, function(req, res, next) {
             var startDate = fields.startDate;
             var endDate = fields.endDate;
             var price = fields.price;
+            var filereplace = fields.filereplace;
 
-            var mimeType = mime.lookup(path.basename(photourl));
-
-            var s3 = new AWS.S3({
-               "accessKeyId" : s3config.key,
-               "secretAccessKey" : s3config.secret,
-               "region" : s3config.region,
-               "params" : {
-                  "Bucket" : s3config.bucket,
-                  "Key" : s3config.imageDir + "/" + path.basename(photourl),
-                  "ACL" : s3config.imageACL,
-                  "ContentType" : mimeType
+            var update = "update greenitems "+
+               "set name = ?, "+
+               "    description = ?, "+
+               "    price = ?, "+
+               "    sdate = ?, "+
+               "    edate = ? "+
+               "where id = ?";
+            connection.query(update, [name, description, price, startDate, endDate, articleid], function(err) {
+               connection.release();
+               if(err) {
+                  callback(err);
                }
             });
 
-            s3.deleteObject(s3.params, function(err, data) {
+            if(filereplace === "true") {
                if(err) {
                   callback(err);
                } else {
-                  console.log(data);
-               }
-            });
+                  var mimeType = mime.lookup(path.basename(photourl));
 
-            var file = files['photo'];
+                  var s3 = new AWS.S3({
+                     "accessKeyId" : s3config.key,
+                     "secretAccessKey" : s3config.secret,
+                     "region" : s3config.region,
+                     "params" : {
+                        "Bucket" : s3config.bucket,
+                        "Key" : s3config.imageDir + "/" + path.basename(photourl),
+                        "ACL" : s3config.imageACL,
+                        "ContentType" : mimeType
+                     }
+                  });
 
-            mimeType = mime.lookup(path.basename(file.path));
+                  s3.deleteObject(s3.params, function(err, data) {
+                     if(err) {
+                        callback(err);
+                     } else {
+                        console.log(data);
+                     }
+                  });
 
-            s3 = new AWS.S3({
-               "accessKeyId" : s3config.key,
-               "secretAccessKey" : s3config.secret,
-               "region" : s3config.region,
-               "params" : {
-                  "Bucket" : s3config.bucket,
-                  "Key" : s3config.imageDir + "/" + path.basename(file.path),
-                  "ACL" : s3config.imageACL,
-                  "ContentType" : mimeType
-               }
-            });
+                  var file = files['photo'];
 
-            var body = fs.createReadStream(file.path);
-            s3.upload({"Body" : body})
-               .on('httpUploadProgress', function(event) {
-                  console.log(event);
-               })
-               .send(function(err, data) {
-                  if(err) {
-                     console.log(err);
-                     cb(err);
-                  } else {
-                     console.log(data);
+                  mimeType = mime.lookup(path.basename(file.path));
 
-                     fs.unlink(file.path, function() {
-                        console.log(file.path + " 파일이 삭제되었습니다...");
+                  s3 = new AWS.S3({
+                     "accessKeyId" : s3config.key,
+                     "secretAccessKey" : s3config.secret,
+                     "region" : s3config.region,
+                     "params" : {
+                        "Bucket" : s3config.bucket,
+                        "Key" : s3config.imageDir + "/" + path.basename(file.path),
+                        "ACL" : s3config.imageACL,
+                        "ContentType" : mimeType
+                     }
+                  });
+
+                  var body = fs.createReadStream(file.path);
+                  s3.upload({"Body" : body})
+                     .on('httpUploadProgress', function(event) {
+                        console.log(event);
                      })
-
-                     var update = "update greendb.greenitems "+
-                        "set name = ?, "+
-                        "    description = ?, "+
-                        "    price = ?, "+
-                        "    picture = ?, "+
-                        "    sdate = ?, "+
-                        "    edate = ? "+
-                        "where id = ?";
-                     connection.query(update, [name, description, price, data.Location, startDate, endDate, articleid], function(err, result) {
-                        connection.release();
+                     .send(function(err, data) {
                         if(err) {
-                           callback(err);
+                           console.log(err);
+                           cb(err);
                         } else {
-                           callback(null, {"message" : "해당 글이 수정되었습니다."});
+                           console.log(data);
+
+                           fs.unlink(file.path, function() {
+                              console.log(file.path + " 파일이 삭제되었습니다...");
+                           })
+
+
                         }
                      });
-                  }
-               })
+               }
+            }
+
          });
 
+         callback(null, {"message" : "글이 수정되었습니다."});
       }
 
       async.waterfall([getConnection, selectGreenitems, updateGreenitems], function(err, result) {
@@ -379,15 +387,15 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
       }
 
       function selectGreenitems(connection, callback) {
-         var select = "select picture "+
-            "from greendb.greenitems "+
-            "where id = ?";
+         var select = "select photourl "+
+            "from photos "+
+            "where refer_type = 3 and refer_id = ?";
          connection.query(select, [articleid], function(err, results) {
             if(err) {
                connection.release();
                callback(err);
             } else {
-               callback(null, results[0].picture, connection);
+               callback(null, results[0].photourl, connection);
             }
          });
       }
@@ -396,43 +404,57 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
          var form = new formidable.IncomingForm();
          form.uploadDir = path.join(__dirname, '../uploads');
          form.keepExtensions = true;
-         form.multiples = true;
+         form.multiples = false;
 
          form.parse(req, function(err, fields, files) {
-            var mimeType = mime.lookup(path.basename(fileurl));
+            if(err) {
+               callback(err);
+            } else {
+               var mimeType = mime.lookup(path.basename(fileurl));
 
-            var s3 = new AWS.S3({
-               "accessKeyId" : s3config.key,
-               "secretAccessKey" : s3config.secret,
-               "region" : s3config.region,
-               "params" : {
-                  "Bucket" : s3config.bucket,
-                  "Key" : s3config.imageDir + "/" + path.basename(fileurl),
-                  "ACL" : s3config.imageACL,
-                  "ContentType" : mimeType
-               }
-            });
+               var s3 = new AWS.S3({
+                  "accessKeyId" : s3config.key,
+                  "secretAccessKey" : s3config.secret,
+                  "region" : s3config.region,
+                  "params" : {
+                     "Bucket" : s3config.bucket,
+                     "Key" : s3config.imageDir + "/" + path.basename(fileurl),
+                     "ACL" : s3config.imageACL,
+                     "ContentType" : mimeType
+                  }
+               });
 
-            s3.deleteObject(s3.params, function(err, data) {
-               if(err) {
-                  callback(err);
-               } else {
-                  console.log(data);
-               }
-            });
+               s3.deleteObject(s3.params, function(err, data) {
+                        if(err) {
+                           callback(err);
+                        } else {
+                           console.log('s3에서 삭제 완료');
+                           console.log(data);
+                        }
+                     });
+
+            }
          });
 
          callback(null, connection);
       }
 
       function deleteGreenitems(connection, callback) {
-         var deleteSql = "delete from greendb.greenitems "+
+         var deleteSql = "delete from greenitems "+
             "where id = ?";
          connection.query(deleteSql, [articleid], function(err, result) {
-            connection.release();
             if(err) {
+               connection.release();
                callback(err);
             } else {
+               var deleteSql = "delete from photos "+
+                               "where refer_type = 3 and refer_id = ?";
+               connection.query(deleteSql, [articleid], function(err) {
+                  connection.release();
+                  if(err) {
+                     callback(err);
+                  }
+               });
                callback(null, {"message" : "글이 정상적으로 삭제되었습니다."});
             }
          });

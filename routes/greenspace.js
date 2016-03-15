@@ -31,7 +31,7 @@ router.get('/', isLoggedIn, function(req, res, next) {
       //2. 전체 게시글 갯수 select
       function selectTotal(connection, callback) {
          var select = "SELECT count(id) as cnt "+
-            "FROM greendb.e_diary";
+            "FROM e_diary";
          connection.query(select, [], function(err, results) {
             if(err) {
                connection.release();
@@ -51,7 +51,7 @@ router.get('/', isLoggedIn, function(req, res, next) {
          var offset = limit * (page - 1);
 
          var select = "select e.id as eid, i.nickname as nickname, e.title as title, e.content as body, e.heart as heart, date_format(CONVERT_TZ(e.wdatetime,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as wdatetime "+
-            "from greendb.e_diary e join iparty i on (e.iparty_id = i.id) "+
+            "from e_diary e join iparty i on (e.iparty_id = i.id) "+
             "order by e.id desc limit ? offset ?";
          connection.query(select, [limit, offset], function(err, results) {
             connection.release();
@@ -114,7 +114,7 @@ router.get('/searching', isLoggedIn, function(req, res, next) {
       //2. get total
       function getTotal(connection, callback) {
          var select = "SELECT count(id) as cnt "+
-            "FROM greendb.e_diary";
+            "FROM e_diary";
          connection.query(select, [], function(err, results) {
             if(err) {
                connection.release();
@@ -138,7 +138,7 @@ router.get('/searching', isLoggedIn, function(req, res, next) {
 
          if (type === 'title') {
             var select = "select e.id as eid, i.nickname as nickname, e.title as title, e.content as body, e.heart as heart, date_format(CONVERT_TZ(e.wdatetime,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as wdatetime " +
-               "from greendb.e_diary e join greendb.iparty i on (e.iparty_id = i.id) " +
+               "from e_diary e join iparty i on (e.iparty_id = i.id) " +
                "where e.title like ? " +
                "order by eid desc limit ? offset ?";
             connection.query(select, [search, limit, offset], function (err, results) {
@@ -174,7 +174,7 @@ router.get('/searching', isLoggedIn, function(req, res, next) {
          }
          if (type === 'nickname') {
             var select = "select e.id as eid, i.nickname as nickname, e.title as title, e.content as body, e.heart as heart, date_format(CONVERT_TZ(e.wdatetime,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as wdatetime " +
-               "from greendb.e_diary e join greendb.iparty i on (e.iparty_id = i.id) " +
+               "from e_diary e join iparty i on (e.iparty_id = i.id) " +
                "where i.nickname like ? " +
                "order by eid desc limit ? offset ?";
             connection.query(select, [search, limit, offset], function (err, results) {
@@ -210,7 +210,7 @@ router.get('/searching', isLoggedIn, function(req, res, next) {
          }
          if(type === 'body') {
             var select = "select e.id as eid, i.nickname as nickname, e.title as title, e.content as body, e.heart as heart, date_format(CONVERT_TZ(e.wdatetime,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as wdatetime "+
-               "from greendb.e_diary e join greendb.iparty i on (e.iparty_id = i.id) "+
+               "from e_diary e join iparty i on (e.iparty_id = i.id) "+
                "where e.content like ? "+
                "order by eid desc limit ? offset ?";
             connection.query(select, [search, limit, offset], function(err, results) {
@@ -278,26 +278,59 @@ router.get('/:articleid', isLoggedIn, function(req, res, next) {
       //2. 이다이어리 select
       function selectGreenspace(connection, callback) {
          var select = "select e.id as eid, i.nickname as nickname, e.title as title, e.content as body, e.heart as heart, date_format(CONVERT_TZ(e.wdatetime,'+00:00','+9:00'),'%Y-%m-%d%H:%i:%s') as wdatetime, e.background_id as bid "+
-            "from greendb.e_diary e join greendb.iparty i on (e.iparty_id = i.id) "+
+            "from e_diary e join iparty i on (e.iparty_id = i.id) "+
             "where e.id = ?";
          connection.query(select, [articleid], function(err, results) {
                if (err) {
                   connection.release();
                   callback(err);
                } else {
-                  var bginfo = {};
+                  var bginfo = [];
+                  var photoinfo = [];
                   if(results[0].bid !== null) {
-                     var selectBG = "select name, path "+
-                        "from greendb.background "+
-                        "where id = ?";
-                     connection.query(selectBG, [results[0].bid], function(err, rsts) {
+                     var select = "select id, photourl, originalfilename "+
+                        "from photos "+
+                        "where refer_id = ? and refer_type = 4";
+                     connection.query(select, [articleid], function(err, results) {
                         if(err) {
                            connection.release();
                            callback(err);
                         } else {
-                           bginfo.bid = results[0].bid;
-                           bginfo.name = rsts[0].name;
-                           bginfo.path = rsts[0].path;
+                           async.each(results, function(result, callback) {
+                              bginfo.push({
+                                 "bgId" : result.id,
+                                 "bgURL" : result.photourl,
+                                 "bgName" : result.originalfilename
+                              });
+                              callback(null, true);
+                           }, function(err) {
+                              if(err) {
+                                 callback(err);
+                              }
+                           });
+                        }
+                     });
+                  } else {
+                     var select = "select id, photourl, originalfilename "+
+                        "from photos "+
+                        "where refer_id = ? and refer_type = 1";
+                     connection.query(select, [articleid], function(err, results) {
+                        if(err) {
+                           connection.release();
+                           callback(err);
+                        } else {
+                           async.each(results, function(result, callback) {
+                              photoinfo.push({
+                                 "photoId" : result.id,
+                                 "photoURL" : result.photourl,
+                                 "photoName" : result.originalfilename
+                              });
+                              callback(null, true);
+                           }, function(err) {
+                              if(err) {
+                                 callback(err);
+                              }
+                           });
                         }
                      });
                   }
@@ -319,39 +352,12 @@ router.get('/:articleid', isLoggedIn, function(req, res, next) {
             }
          )
       }
-      //3. 포토 select
-      function selectPhotos(info, connection, callback) {
-         var select = "select id, photourl, originalfilename "+
-            "from greendb.photos "+
-            "where refer_id = ? and refer_type = 1";
-         connection.query(select, [articleid], function(err, results) {
-            if(err) {
-               connection.release();
-               callback(err);
-            } else {
-               async.each(results, function(result, callback) {
-                  info.result.photo.push({
-                     "photoId" : result.id,
-                     "photoURL" : result.photourl,
-                     "photoName" : result.originalfilename
-                  });
-                  callback(null, true);
-               }, function(err) {
-                  if(err) {
-                     callback(err);
-                  }
-               });
-               callback(null, info, connection);
-            }
-         });
-      }
-      //4. 댓글 select
+      //3. 댓글 select
       function selectReply(info, connection, callback) {
          var select = "select r.id as rid, r.body as body, date_format(CONVERT_TZ(r.wdatetime,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as wdatetime, i.nickname "+
-            "from greendb.reply r join greendb.iparty i on (r.iparty_id = i.id) "+
+            "from reply r join iparty i on (r.iparty_id = i.id) "+
             "where r.ediary_id = ?";
          connection.query(select, [articleid], function(err, results) {
-            connection.release();
             if(err) {
                callback(err);
             } else {
@@ -373,7 +379,7 @@ router.get('/:articleid', isLoggedIn, function(req, res, next) {
          });
       }
 
-      async.waterfall([getConnection, selectGreenspace, selectPhotos, selectReply], function(err, info) {
+      async.waterfall([getConnection, selectGreenspace, selectReply], function(err, info) {
          if(err) {
             err.message = "게시글을 불러올 수 없습니다.";
             next(err);
@@ -409,7 +415,7 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
                callback(err);
             }
             //댓글들 삭제
-            var deleteSql = "delete from greendb.reply "+
+            var deleteSql = "delete from reply "+
                "where ediary_id = ?";
             connection.query(deleteSql, [articleid], function(err) {
                if(err) {
@@ -418,8 +424,8 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
                }
             });
             //S3에 업로드된 파일 삭제
-            var selectPhotos = "select id, modifiedfilename, phototype "+
-               "from greendb.photos "+
+            var selectPhotos = "select photourl, phototype "+
+               "from photos "+
                "where refer_type = 1 and refer_id = ?";
             connection.query(selectPhotos, [articleid], function(err, results) {
                if(err) {
@@ -435,7 +441,7 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
                         "region" : s3config.region,
                         "params" : {
                            "Bucket" : s3config.bucket,
-                           "Key" : s3config.imageDir + "/" + result.modifiedfilename,
+                           "Key" : s3config.imageDir + "/" + path.basename(result.photourl),
                            "ACL" : s3config.imageACL,
                            "ContentType" : result.phototype
                         }
@@ -451,7 +457,7 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
                         }
                      });
                      //photo db에 있는 레코더들을 지운다.
-                     var deletePhotos = "delete from greendb.photos "+
+                     var deletePhotos = "delete from photos "+
                         "where id = ?";
                      connection.query(deletePhotos, [result.id], function(err) {
                         if(err) {
@@ -470,7 +476,7 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
                }
             });
             //게시글 삭제
-            var deleteGreenspace = "delete from greendb.e_diary "+
+            var deleteGreenspace = "delete from e_diary "+
                "where id = ?";
             connection.query(deleteGreenspace, [articleid], function(err, result) {
                if(err) {
