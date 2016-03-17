@@ -142,9 +142,11 @@ router.post('/', isLoggedIn, function(req, res, next) {
                      var err = new Error('반드시 동영상은 업로드되어야 합니다.');
                      next(err);
                   } else {
-                     var file = files['multimedia'];
+                     var videoFile = files['multimedia'];
+                     var thumbnailFile = files['thumbnail'];
 
-                     var mimeType = mime.lookup(path.basename(file.path));
+                     var videoMimeType = mime.lookup(path.basename(videoFile.path));
+                     var thumbnailMimeType = mime.lookup(path.basename(thumbnailFile.path));
 
                      var s3 = new AWS.S3({
                         "accessKeyId" : s3config.key,
@@ -152,13 +154,33 @@ router.post('/', isLoggedIn, function(req, res, next) {
                         "region" : s3config.region,
                         "params" : {
                            "Bucket" : s3config.bucket,
-                           "Key" : s3config.multimediaDir + "/" + path.basename(file.path),
+                           "Key" : s3config.multimediaDir + "/" + path.basename(videoFile.path),
                            "ACL" : s3config.multimediaACL,
-                           "ContentType" : mimeType
+                           "ContentType" : videoMimeType
                         }
                      });
 
-                     var body = fs.createReadStream(file.path);
+                     var articleinfo = {
+                        "title" : fields.title,
+                        "content" : fields.content,
+                        "company" : fields.company,
+                        "startDate" : fields.startDate,
+                        "endDate" : fields.endDate,
+                     };
+                     var videoInfo = {
+                        "fileurl" : null,
+                        "originalfilename" : videoFile.name,
+                        "modifiedfilename" : path.basename(videoFile.path),
+                        "filetype" : videoFile.type
+                     };
+                     var thumbnailInfo = {
+                        "fileurl" : null,
+                        "originalfilename" : thumbnailFile.name,
+                        "modifiedfilename" : path.basename(thumbnailFile.path),
+                        "filetype" : thumbnailFile.type
+                     };
+
+                     var body = fs.createReadStream(videoFile.path);
                      s3.upload({"Body" : body})
                         .on('httpUploadProgress', function(event) {
                            console.log(event);
@@ -170,26 +192,47 @@ router.post('/', isLoggedIn, function(req, res, next) {
                            } else {
                               console.log(data);
 
-                              var info = {
-                                 "title" : fields.title,
-                                 "content" : fields.content,
-                                 "company" : fields.company,
-                                 "startDate" : fields.startDate,
-                                 "endDate" : fields.endDate,
-                                 "fileurl" : data.Location,
-                                 "originalfilename" : file.name,
-                                 "modifiedfilename" : path.basename(file.path),
-                                 "filetype" : file.type
-                              };
+                              videoInfo.fileurl = data.Location;
 
-                              console.log('인포', info);
-                              callback(null, info, connection);
-                              fs.unlink(file.path, function() {
+                              fs.unlink(videoFile.path, function() {
                                  console.log('동영상 삭제 완료');
                               });
+
+                              s3 = new AWS.S3({
+                                 "accessKeyId" : s3config.key,
+                                 "secretAccessKey" : s3config.secret,
+                                 "region" : s3config.region,
+                                 "params" : {
+                                    "Bucket" : s3config.bucket,
+                                    "Key" : s3config.thumbnailDir + "/" + path.basename(thumbnailFile.path),
+                                    "ACL" : s3config.thumbnailACL,
+                                    "ContentType" : thumbnailMimeType
+                                 }
+                              });
+
+                              var body = fs.createReadStream(thumbnailFile.path);
+                              s3.upload({"Body" : body})
+                                 .on('httpUploadProgress', function(event) {
+                                    console.log(event);
+                                 })
+                                 .send(function(err, data) {
+                                    if(err) {
+                                       console.log(err);
+                                       callback(err);
+                                    } else {
+                                       console.log(data);
+
+                                       thumbnailInfo.fileurl = data.Location;
+
+                                       fs.unlink(thumbnailFile.path, function() {
+                                          console.log('썸네일 삭제 완료');
+                                       });
+
+                                       callback(null, articleinfo, videoInfo, thumbnailInfo, connection);
+                                    }
+                                 });
                            }
                         });
-
 
                   }
                }
@@ -197,16 +240,26 @@ router.post('/', isLoggedIn, function(req, res, next) {
          }
       }
 
-      function insertEpromotion(info, connection, callback) {
+      function insertEpromotion(articleinfo, videoInfo, thumbnailInfo, connection, callback) {
          var insert = "insert into epromotion(title, cname, sdate, edate, content, iparty_id, fileurl, uploaddate, originalfilename, modifiedfilename, filetype) "+
             "values(?, ?, ?, ?, ?, ?, ?, now(), ?, ?, ?)";
-         connection.query(insert, [info.title, info.company, info.startDate, info.endDate, info.content, 1, info.fileurl, info.originalfilename, info.modifiedfilename, info.filetype], function(err, result) { //로그인필요
-            connection.release();
+         connection.query(insert, [articleinfo.title, articleinfo.company, articleinfo.startDate, articleinfo.endDate, articleinfo.content, req.user.id, videoInfo.fileurl, videoInfo.originalfilename, videoInfo.modifiedfilename, videoInfo.filetype], function(err, result) { //로그인필요
             if(err) {
+               connection.release();
                callback(err);
             } else {
                var orderId = result.insertId;
-               callback(null, {"message" : "글이 정상적으로 저장되었습니다."})
+               var insertPhoto = "insert into photos(photourl, uploaddate, originalfilename, modifiedfilename, phototype, refer_type, refer_id) "+
+                                  "values(?, now(), ?, ?, ?, 3, ?)";
+               connection.query(insertPhoto, [thumbnailInfo.fileurl, thumbnailInfo.originalfilename, thumbnailInfo.modifiedfilename, thumbnailInfo.filetype, orderId], function(err, result) {
+                  connection.release();
+                  if(err) {
+                     callback(err);
+                  } else {
+                     callback(null, {"message" : "글이 정상적으로 저장되었습니다."})
+                  }
+               });
+
             }
          })
       }
@@ -280,85 +333,169 @@ router.put('/:articleid', isLoggedIn, function(req, res, next) {
          });
 
          form.parse(req, function(err, fields, files) {
-            var title = fields.title;
-            var content = fields.content;
-            var startDate = fields.startDate;
-            var endDate = fields.endDate;
-            var company = fields.company;
-            var filestatus = fields.filestatus;
+            if(err) {
+               callback(err);
+            } else {
+               var title = fields.title;
+               var content = fields.content;
+               var startDate = fields.startDate;
+               var endDate = fields.endDate;
+               var company = fields.company;
+               var filereplacement = fields.filereplacement;
 
-            if(filestatus = "replacefile") {
-               var mimeType = mime.lookup(path.basename(fileinfo.fileurl));
+               if(filesreplacement = "true") {
+                  var thumbnailurl;
 
-               var s3 = new AWS.S3({
-                  "accessKeyId" : s3config.key,
-                  "secretAccessKey" : s3config.secret,
-                  "region" : s3config.region,
-                  "params" : {
-                     "Bucket" : s3config.bucket,
-                     "Key" : s3config.multimediaDir + "/" + path.basename(fileinfo.fileurl),
-                     "ACL" : s3config.multimediaACL,
-                     "ContentType" : mimeType
-                  }
-               });
-
-               s3.deleteObject(s3.params, function(err, data) {
-                  if(err) {
-                     callback(err);
-                  } else {
-                     console.log(data);
-                  }
-               });
-
-               var file = files['multimedia'];
-
-               mimeType = mime.lookup(path.basename(file.path));
-
-               var s3 = new AWS.S3({
-                  "accessKeyId" : s3config.key,
-                  "secretAccessKey" : s3config.secret,
-                  "region" : s3config.region,
-                  "params" : {
-                     "Bucket" : s3config.bucket,
-                     "Key" : s3config.multimediaDir + "/" + path.basename(file.fileurl),
-                     "ACL" : s3config.multimediaACL,
-                     "ContentType" : mimeType
-                  }
-               });
-
-               var body = fs.createReadStream(file.path);
-               s3.upload({"Body" : body})
-                  .on('httpUploadProgress', function(event) {
-                     console.log(event);
-                  })
-                  .send(function(err, data) {
+                  var select = "select photourl "+
+                               "from photos "+
+                               "where refer_type = 2 and refer_id = ?";
+                  connection.query(select, [articleid], function(err, results) {
                      if(err) {
-                        console.log(err);
-                        cb(err);
+                        connection.release();
+                        callback(err);
+                     } else {
+                        thumbnailurl = results[0].fileurl;
+                     }
+                  });
+
+                  var videoMimeType = mime.lookup(path.basename(fileinfo.fileurl));
+                  var thumbnailMimeType = mime.lookup(path.basename(thumbnailurl));
+
+                  var s3 = new AWS.S3({
+                     "accessKeyId" : s3config.key,
+                     "secretAccessKey" : s3config.secret,
+                     "region" : s3config.region,
+                     "params" : {
+                        "Bucket" : s3config.bucket,
+                        "Key" : s3config.multimediaDir + "/" + path.basename(fileinfo.fileurl),
+                        "ACL" : s3config.multimediaACL,
+                        "ContentType" : videoMimeType
+                     }
+                  });
+
+                  s3.deleteObject(s3.params, function(err, data) {
+                     if(err) {
+                        callback(err);
                      } else {
                         console.log(data);
-
-                        //fs.unlink(file.path, function() {
-                        //   console.log(file.path + " 파일이 삭제되었습니다...");
-                        //})
-
-                        var update = "update epromotion "+
-                           "set fileurl = ?, "+
-                           "    uploaddate = now(), "+
-                           "    originalfilename = ?, "+
-                           "    modifiedfilename = ?, "+
-                           "    filetype = ? "+
-                           "where id = ?";
-                        connection.query(update, [data.Location, path.basename(file.name, path.extname(file.name)), path.basename(file.path), file.type, articleid], function(err, result) {
-                           connection.release();
-                           if(err) {
-                              callback(err);
-                           } else {
-                              callback(null, {"message" : "해당 글이 수정되었습니다."});
-                           }
-                        });
                      }
-                  })
+                  });
+
+                  s3 = new AWS.S3({
+                     "accessKeyId" : s3config.key,
+                     "secretAccessKey" : s3config.secret,
+                     "region" : s3config.region,
+                     "params" : {
+                        "Bucket" : s3config.bucket,
+                        "Key" : s3config.thumbnailDir + "/" + path.basename(thumbnailurl),
+                        "ACL" : s3config.thumbnailACL,
+                        "ContentType" : thumbnailMimeType
+                     }
+                  });
+
+                  s3.deleteObject(s3.params, function(err, data) {
+                     if(err) {
+                        callback(err);
+                     } else {
+                        console.log(data);
+                     }
+                  });
+
+                  var deletePhoto = "delete from photos "+
+                                    "where refer_type = 2 and refer_id = ?";
+                  connection.query(deletePhoto, [articleid], function(err) {
+                     if(err) {
+                        connection.release();
+                        callback(err);
+                     }
+                  });
+
+                  var videofile = files['multimedia'];
+                  var thumbnailfile = files['thumbnail'];
+
+                  videoMimeType = mime.lookup(path.basename(videofile.path));
+
+                  var s3 = new AWS.S3({
+                     "accessKeyId" : s3config.key,
+                     "secretAccessKey" : s3config.secret,
+                     "region" : s3config.region,
+                     "params" : {
+                        "Bucket" : s3config.bucket,
+                        "Key" : s3config.multimediaDir + "/" + path.basename(videofile.path),
+                        "ACL" : s3config.multimediaACL,
+                        "ContentType" : videoMimeType
+                     }
+                  });
+
+                  var body = fs.createReadStream(videofile.path);
+                  s3.upload({"Body" : body})
+                     .on('httpUploadProgress', function(event) {
+                        console.log(event);
+                     })
+                     .send(function(err, data) {
+                        if(err) {
+                           console.log(err);
+                           cb(err);
+                        } else {
+                           console.log(data);
+
+                           fs.unlink(videofile.path, function() {
+                              console.log(videofile.path + " 파일이 삭제되었습니다...");
+                           })
+
+                           thumbnailMimeType = mime.lookup(path.basename(thumbnailfile.path));
+
+                           s3 = new AWS.S3({
+                              "accessKeyId" : s3config.key,
+                              "secretAccessKey" : s3config.secret,
+                              "region" : s3config.region,
+                              "params" : {
+                                 "Bucket" : s3config.bucket,
+                                 "Key" : s3config.thumbnailDir + "/" + path.basename(thumbnailfile.fileurl),
+                                 "ACL" : s3config.thumbnailACL,
+                                 "ContentType" : thumbnailMimeType
+                              }
+                           });
+
+                           var body = fs.createReadStream(thumbnailfile.path);
+                           s3.upload({"Body" : body})
+                              .on('httpUploadProgress', function(event) {
+                                 console.log(event);
+                              })
+                              .send(function(err, data) {
+                                 if(err) {
+                                    console.log(err);
+                                    cb(err);
+                                 } else {
+                                    console.log(data);
+
+                                    var insert = "insert into photos(photourl, uploaddate, originalfilename, modifiedfilename, phototype, refer_type, refer_id) "+
+                                       "values(?, now(), ?, ?, ?, 2, ?)";
+                                    connection.query(insert, [data.Location, path.basename(thumbnailfile.name, path.extname(thumbnailfile.name)), path.basename(thumbnailfile.path), thumbnailfile.type, articleid], function(err) {
+                                       if(err) {
+                                          callback(err);
+                                       }
+                                    });
+                                 }
+                              });
+
+                           var update = "update epromotion "+
+                              "set fileurl = ?, "+
+                              "    uploaddate = now(), "+
+                              "    originalfilename = ?, "+
+                              "    modifiedfilename = ?, "+
+                              "    filetype = ? "+
+                              "where id = ?";
+                           connection.query(update, [data.Location, path.basename(videofile.name, path.extname(videofile.name)), path.basename(videofile.path), videofile.type, articleid], function(err, result) {
+                              if(err) {
+                                 callback(err);
+                              } else {
+                                 callback(null, {"message" : "해당 글이 수정되었습니다."});
+                              }
+                           });
+                        }
+                     })
+               }
             }
          });
 
@@ -400,15 +537,27 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
             "where id = ?";
          connection.query(select, [articleid], function (err, results) {
             if (err) {
+               connection.release();
                callback(err);
             } else {
-               callback(null, results[0].fileurl, connection);
+               var thumbnailSelect = "select photourl "+
+                  "from photos "+
+                  "where refer_type = 2 and refer_id = ?";
+               connection.query(thumbnailSelect, [articleid], function(err, thumbnailResults) {
+                  if(err) {
+                     connection.release();
+                     callback(err);
+                  } else {
+                     callback(null, results[0].fileurl, thumbnailResults[0].photourl, connection);
+                  }
+               });
+
             }
          });
       }
 
       //s3에 파일 삭제
-      function deleteFile(fileurl, connection, callback) {
+      function deleteFile(fileurl, thumbnailurl, connection, callback) {
          var mimeType = mime.lookup(path.basename(fileurl));
 
          var s3 = new AWS.S3({
@@ -428,26 +577,59 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
                callback(err);
             } else {
                console.log(data);
-               callback(null, connection);
             }
          });
-      }
 
-      //deleteEpromotion
-      function deleteEpromotion(connection, callback) {
-         var deleteSql = "delete from epromotion " +
-            "where id = ?";
-         connection.query(deleteSql, [articleid], function (err, result) {
-            connection.release();
+         var mimeType = mime.lookup(path.basename(thumbnailurl));
+
+         s3 = new AWS.S3({
+            "accessKeyId": s3config.key,
+            "secretAccessKey": s3config.secret,
+            "region": s3config.region,
+            "params": {
+               "Bucket": s3config.bucket,
+               "Key": s3config.thumbnailDir + "/" + path.basename(thumbnailurl),
+               "ACL": s3config.thumbnailACL,
+               "ContentType": mimeType
+            }
+         });
+
+         s3.deleteObject(s3.params, function (err, data) {
             if (err) {
                callback(err);
             } else {
-               callback(null, {"message": "해당 글이 삭제되었습니다."});
+               console.log(data);
+            }
+         });
+
+         callback(null, connection);
+      }
+
+      //deleteEpromotion
+      function deleteEpromotionAndPhoto(connection, callback) {
+         var deleteSql = "delete from epromotion " +
+            "where id = ?";
+         connection.query(deleteSql, [articleid], function (err, result) {
+            if (err) {
+               connection.release();
+               callback(err);
+            } else {
+               var deletePhoto = "delete from photos "+
+                  "where refer_type = 2 and refer_id = ?";
+               connection.query(deletePhoto, [articleid], function(err, result) {
+                  connection.release();
+                  if(err) {
+                     callback(err);
+                  } else {
+                     callback(null, {"message": "해당 글이 삭제되었습니다."});
+                  }
+               });
+
             }
          })
       }
 
-      async.waterfall([getConnection, selectEpromotion, deleteFile, deleteEpromotion], function (err, result) {
+      async.waterfall([getConnection, selectEpromotion, deleteFile, deleteEpromotionAndPhoto], function (err, result) {
          if (err) {
             err.message = "해당 글의 삭제에 실패하였습니다...";
             next(err);
@@ -460,7 +642,7 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
       err.status = 426;
       next(err);
    }
-   });
+});
 
 router.get('/searching', function(req, res, next) {
    if(req.secure) {
