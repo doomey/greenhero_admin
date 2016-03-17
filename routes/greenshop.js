@@ -8,6 +8,9 @@ var fs = require('fs');
 var mime = require('mime');
 var path = require('path')
 
+
+//delete시 cart와 외래키로 연결된 부분 해결 필요
+
 function isLoggedIn(req, res, next) {//
    if(!req.isAuthenticated()) {
       var err = new Error('로그인이 필요합니다...');
@@ -438,7 +441,19 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
 
          callback(null, connection);
       }
-
+      //카트 지우기
+      function deleteCart(connection, callback) {
+         var deleteSql = "delete from cart "+
+            "where greenitems_id = ?";
+         connection.query(deleteSql, [articleid], function(err, result) {
+            if(err) {
+               connection.release();
+               callback(err);
+            } else {
+               callback(null, connection);
+            }
+         });
+      }
       function deleteGreenitems(connection, callback) {
          var deleteSql = "delete from greenitems "+
             "where id = ?";
@@ -460,7 +475,7 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
          });
       }
 
-      async.waterfall([getConnection, selectGreenitems, deleteFile, deleteGreenitems], function(err, result) {
+      async.waterfall([getConnection, selectGreenitems, deleteFile, deleteCart, deleteGreenitems], function(err, result) {
          if(err) {
             err.message = "해당 글의 삭제에 실패하였습니다.";
             next(err);
