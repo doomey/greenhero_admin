@@ -15,7 +15,7 @@ module.exports = function(passport) {
             if(err) {
                 done(err);
             } else {
-                var sql = "select id, username, google_id, google_email,"+ sqlAES.decrypt("name") +" google_name,nickname "+
+                var sql = "select id, username, "+ sqlAES.decrypt("name") +" nickname "+
                           "from iparty " +
                           "where id = ?";
                 connection.query(sql, [id], function(err, results) {
@@ -55,8 +55,7 @@ module.exports = function(passport) {
         }
         //2. selectpassword
         function selectIparty(connection, callback) {
-            var select = "select id, username, hashpassword, nickname, "+ sqlAES.decrypt("name") +
-               sqlAES.decrypt("google_email", true) +
+            var select = "select id, username, hashpassword, nickname, google_email, "+ sqlAES.decrypt("name", true) +
                    //"convert(aes_decrypt(google_email, unhex(" + connection.escape(serverKey) + ")) using utf8) as gemail " +
                "from greendb.iparty " +
                "where username = ?";
