@@ -17,86 +17,54 @@ function isLoggedIn(req, res, next) {
 
 //greenspace 게시글 불러오기
 router.get('/', isLoggedIn, function(req, res, next) {
-   if(req.secure) {
-      //1. 커넥션 연결
-      function getConnection(callback) {
-         pool.getConnection(function(err, connection) {
-            if(err) {
-               callback(err);
-            } else {
-               callback(null, connection);
-            }
-         });
-      }
-      //2. 전체 게시글 갯수 select
-      function selectTotal(connection, callback) {
-         var select = "SELECT count(id) as cnt "+
-            "FROM e_diary";
-         connection.query(select, [], function(err, results) {
-            if(err) {
-               connection.release();
-               callback(err);
-            } else {
-               callback(null, results[0].cnt, connection);
-            }
-         });
-      }
-      //3. 게시글 페이징처리
-      function selectGreenspace(total, connection, callback) {
-         var page = parseInt(req.query.page);
-         page = (isNaN(page))? 1 : page;
-         page = (page < 1) ?  1 : page;
+   var page = parseInt(req.query.page);
+   page = (isNaN(page))? 1 : page;
+   page = (page < 1)? 1 : page;
 
-         var limit = parseInt(req.query.limit) || 10;
-         var offset = limit * (page - 1);
+   var limit = parseInt(req.query.limit) || 10;
+   var offset = limit * (page - 1);
 
-         var select = "select e.id as eid, i.nickname as nickname, e.title as title, e.content as body, e.heart as heart, date_format(CONVERT_TZ(e.wdatetime,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as wdatetime "+
-            "from e_diary e join iparty i on (e.iparty_id = i.id) "+
-            "order by e.id desc limit ? offset ?";
-         connection.query(select, [limit, offset], function(err, results) {
-            connection.release();
-            if(err) {
-               callback(err);
+   var greenspaces = [];
+   var sql = "SELECT e.id as id, i.nickname, e.title as title, e.heart as heart, date_format(CONVERT_TZ(e.wdatetime,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as wdatetime, ifnull(r.rAmount,0) as rAmount, b.photourl as backgroundUrl, " +
+      "e.content as content, p.photourl as photourl " +
+      "FROM e_diary e left join (select ediary_id, count(ediary_id) as rAmount from reply group by ediary_id) r on (e.id = r.ediary_id) " +
+      "left join (select refer_id, photourl from photos where refer_type = 1) p on (e.id = p.refer_id) " +
+      "left join (select refer_id, photourl from photos where refer_type = 4) b on (e.background_id = b.refer_id) " +
+      "left join (select id, nickname from iparty) i on (e.iparty_id = i.id) " +
+      "order by id desc limit ? offset ?";
+   pool.getConnection(function(err, conn) {
+      if (err) {
+         next(err);
+      } else {
+         conn.query(sql, [limit, offset], function(err, rows, fields) {
+            conn.release();
+            if (err) {
+               next(err);
             } else {
-               var info = {
-                  "result" : {
-                     "total" : total,
-                     "page" : page,
-                     "listPerPage" : limit,
-                     "list" : []
-                  }
-               };
-               async.each(results, function(element, callback) {
-                  info.result.list.push({
-                     "id" : element.eid,
+               async.each(rows, function(element, callback) {
+                  var greenspace = {
+                     "id" : element.id,
                      "nickname" : element.nickname,
                      "title" : element.title,
                      "wtime" : element.wdatetime,
-                     "eDiaryHeart" : element.heart
-                  });
-                  callback(null, true);
+                     "eDiaryHeart" : element.heart,
+                     "content" : element.content,
+                     "backgroundUrl" : element.backgroundUrl,
+                     "photoUrl" : element.photourl
+                  };
+                  greenspaces.push(greenspace);
+                  callback();
                }, function(err) {
-                  if(err) {
-                     callback(err);
+                  if (err) {
+                     next(err);
+                  } else {
+                     res.json(greenspaces);
                   }
                });
-               callback(null, info);
             }
          });
       }
-      async.waterfall([getConnection, selectTotal, selectGreenspace], function(err, info) {
-         if(err) {
-            err.message = "게시글 목록을 불러올 수 없습니다.";
-            next(err);
-         } else {
-            res.json(info);
-         }
-      });
-   } else {
-      var err = new Error('SSL/TLS Upgreade Required...');
-      err.status = 426;
-      next(err);
-   }
+   });
 });
 
 router.get('/searching', isLoggedIn, function(req, res, next) {
@@ -154,13 +122,14 @@ router.get('/searching', isLoggedIn, function(req, res, next) {
                         "list": []
                      }
                   };
-                  async.each(results, function (element, callback) {
+                  async.each(results, function (result, callback) {
                      info.result.list.push({
-                        "id": element.eid,
-                        "nickname": element.nickname,
-                        "title": element.title,
-                        "wtime": element.wdatetime,
-                        "eDiaryHeart": element.heart
+                        "id": result.eid,
+                        "nickname": result.nickname,
+                        "title": result.title,
+                        "content" : result.body,
+                        "wtime": result.wdatetime,
+                        "eDiaryHeart": result.heart
                      });
                      callback(null, true);
                   }, function (err) {
@@ -476,17 +445,35 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
                }
             });
             //게시글 삭제
-            var deleteGreenspace = "delete from e_diary "+
-               "where id = ?";
-            connection.query(deleteGreenspace, [articleid], function(err, result) {
+            var select = "select iparty_id "+
+                         "from e_diary "+
+                         "where id = ?";
+            connection.query(select, [articleid], function(err, results) {
                if(err) {
                   connection.rollback();
                   connection.release();
                   callback(err);
                } else {
-                  connection.commit();
-                  connection.release();
-                  callback(null, {"message" : "게시글을 삭제하였습니다"});
+                  if(results.length) {
+                     var deleteGreenspace = "delete from e_diary "+
+                        "where id = ?";
+                     connection.query(deleteGreenspace, [articleid], function(err, result) {
+                        if(err) {
+                           connection.rollback();
+                           connection.release();
+                           callback(err);
+                        } else {
+                           connection.commit();
+                           connection.release();
+                           callback(null, {"message" : "게시글을 삭제하였습니다"});
+                        }
+                     });
+                  } else {
+                     var err = new Error('해당 게시글이 없습니다.');
+                     connection.rollback();
+                     connection.release();
+                     callback(err);
+                  }
                }
             });
          });
@@ -494,7 +481,6 @@ router.delete('/:articleid', isLoggedIn, function(req, res, next) {
 
       async.waterfall([getConnection, deleteTransaction], function(err, result) {
          if(err) {
-            err.message = "게시글을 삭제하지 못했습니다.";
             next(err);
          } else {
             res.json(result);
