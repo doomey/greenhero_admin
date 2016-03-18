@@ -3,9 +3,9 @@ var router = express.Router();
 var async = require('async');
 var passport = require('passport');
 var bcrypt = require('bcrypt');
-var splAES = require('./sqlAES.js');
+var sqlAes = require('./sqlAES.js');
 
-splAES.setServerKey(process.env.GREEN_SERVER_KEY);
+sqlAes.setServerKey(process.env.GREEN_SERVER_KEY);
 
 router.post('/login', function(req, res, next) {
    if(req.secure) {
@@ -103,8 +103,10 @@ router.post('/signup', function(req, res, next) {
 
       //5. insert
       function insertIparty(connection, hashPassword, callback) {
-         var insert = "insert into iparty(username, hashpassword, partytype" + sqlAES.encrypt(2) + ") "+
-                      "values(?, ?, 1, ?, ?)";
+         var insert = "insert into iparty(username, hashpassword, partytype, name, phone) " +
+                      "values(?, ?, 1, " +
+                      sqlAes.encrypt(2) +
+                      ")";
          connection.query(insert, [username, hashPassword, 2, name, phone], function(err, result) {
             if(err) {
                callback(err);
