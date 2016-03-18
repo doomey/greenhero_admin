@@ -83,7 +83,7 @@ router.get('/', isLoggedIn, function(req, res, next) {
                      "originalfilename" : result.originalfilename,
                      "modifiedfilename" : result.modifiedfilename,
                      "filetype" : result.filetype,
-                     "photourl" : result.photourl
+                     "thumbnailurl" : result.photourl
                   });
                }, function(err) {
                   if(err) {
