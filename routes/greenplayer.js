@@ -54,9 +54,9 @@ router.get('/', isLoggedIn, function(req, res, next) {
          offset = limit * (page - 1);
 
          //안드로이드에서 게시글 번호 붙이기 -> offset과 info.result.list의 인덱스를 이용하여 글 번호를 붙일것.
-         var select = "select id, title, cname, sdate, edate, fileurl, date_format(CONVERT_TZ(uploaddate,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as uploaddate, originalfilename, modifiedfilename, filetype, content "+
-            "from epromotion "+
-            "order by id desc limit ? offset ?";
+         var select = "select e.id as id, e.title as title, e.cname as cname, e.sdate as sdate, e.edate as edate, e.fileurl as fileurl, date_format(CONVERT_TZ(e.uploaddate,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as uploaddate, e.originalfilename as originalfilename, e.modifiedfilename as modifiedfilename, e.filetype as filetype, e.content as content, p.photourl as photourl "+
+                      "from epromotion e left join photos p on (e.id = p.refer_id and p.refer_type = 2) "+
+                      "order by e.id desc limit ? offset ?";
          connection.query(select, [limit, offset] , function(err, results) {
             if(err) {
                connection.release();
@@ -70,19 +70,20 @@ router.get('/', isLoggedIn, function(req, res, next) {
                      "list" : []
                   }
                };
-               async.each(results, function(item, callback) {
+               async.each(results, function(result, callback) {
                   info.result.list.push({
-                     "epId" : item.id,
-                     "title" : item.title,
-                     "content" : item.content,
-                     "epName" : item.cname,
-                     "sDate" : item.sDate,
-                     "eDate" : item.eDate,
-                     "fileurl" : item.fileurl,
-                     "uploaddate" : item.uploaddate,
-                     "originalfilename" : item.originalfilename,
-                     "modifiedfilename" : item.modifiedfilename,
-                     "filetype" : item.filetype
+                     "epId" : result.id,
+                     "title" : result.title,
+                     "content" : result.content,
+                     "epName" : result.cname,
+                     "sDate" : result.sDate,
+                     "eDate" : result.eDate,
+                     "fileurl" : result.fileurl,
+                     "uploaddate" : result.uploaddate,
+                     "originalfilename" : result.originalfilename,
+                     "modifiedfilename" : result.modifiedfilename,
+                     "filetype" : result.filetype,
+                     "photourl" : result.photourl
                   });
                }, function(err) {
                   if(err) {
@@ -250,7 +251,7 @@ router.post('/', isLoggedIn, function(req, res, next) {
             } else {
                var orderId = result.insertId;
                var insertPhoto = "insert into photos(photourl, uploaddate, originalfilename, modifiedfilename, phototype, refer_type, refer_id) "+
-                                  "values(?, now(), ?, ?, ?, 3, ?)";
+                                  "values(?, now(), ?, ?, ?, 2, ?)";
                connection.query(insertPhoto, [thumbnailInfo.fileurl, thumbnailInfo.originalfilename, thumbnailInfo.modifiedfilename, thumbnailInfo.filetype, orderId], function(err, result) {
                   connection.release();
                   if(err) {
