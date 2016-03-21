@@ -241,146 +241,156 @@ router.post('/', isLoggedIn, function(req, res, next) {
    });
    }
 });
-//
-//router.delete('/', isLoggedIn, function(req, res, next) {
-//   var bid = [];
-//   var bgid = req.body.bgid;
-//
-//   if((typeof bgid)=== 'string') {
-//      bid.push(parseInt(bgid));
-//   } else {
-//      bgid.forEach(function(item) {
-//         bid.push(parseInt(item));
-//      });
-//   }
-//
-//   //커넥션 연결
-//   function getConnection(callback) {
-//      pool.getConnection(function(err, connection) {
-//         if(err) {
-//            callback(err);
-//         } else {
-//            callback(null, connection);
-//         }
-//      });
-//   }
-//
-//   //background테이블을 select하여 path를 추출한 후 s3에서 삭제
-//   function selectBackground(connection, callback) {
-//      var select = "select id, name "+
-//                   "from background "+
-//                   "where id in (?)";
-//      connection.query(select, [bid], function(err, results) {
-//         if(err) {
-//            connection.release();
-//            callback(err);
-//         } else {
-//            if(results.length === 0) {
-//               var err = new Error('배경사진이 존재하지 않습니다.');
-//               next(err);
-//            } else {
-//               async.each(results, function(result, cb) {
-//
-//                  function selectPhotos(callback) {
-//                     var backgroundURL = [];
-//
-//                     var select = "select photourl "+
-//                        "from photos "+
-//                        "where refer_id = ? and refer_type = 4";
-//                     connection.query(select, [result.id], function(err, result) {
-//                        if(err) {
-//                           connection.release();
-//                           callback(err);
-//                        } else {
-//                           console.log('포토테이블 셀렉트 완료');
-//                           backgroundUR.push(result[0].photourl);
-//                        }
-//                     });
-//
-//                     var deletePhoto = "delete from photos "+
-//                                       "where refer_id = ?";
-//                     connection.query(deletePhoto, [result.id], function(err, result) {
-//                        if(err) {
-//                           connection.release();
-//                           callback(err);
-//                        } else {
-//                           callback(null, backgroundURL);
-//                        }
-//                     })
-//                  }
-//
-//                  function deleteBackground(backgroundURL, callback) {
-//                     var deleteSql = "delete from background "+
-//                        "where id = ?"
-//                     connection.query(deleteSql, [result.id], function(err) {
-//                        if(err) {
-//                           connection.release();
-//                           callback(err);
-//                        } else {
-//                           console.log('백그라운드 테이블에서 삭제 완료');
-//                           callback(null, backgroundURL);
-//                        }
-//                     });
-//                  }
-//
-//                  function deleteUploadedFile(background_url, callback) {
-//                     var mimeType = mime.lookup(path.basename(background_url));
-//
-//                     var s3 = new AWS.S3({
-//                        "accessKeyId" : s3config.key,
-//                        "secretAccessKey" : s3config.secret,
-//                        "region" : s3config.region,
-//                        "params" : {
-//                           "Bucket" : s3config.bucket,
-//                           "Key" : s3config.bgDir + "/" + path.basename(background_url),
-//                           "ACL" : s3config.bgACL,
-//                           "ContentType" : mimeType
-//                        }
-//                     });
-//
-//                     s3.deleteObject(s3.params, function(err, data) {
-//                        if(err) {
-//                           callback(err);
-//                        } else {
-//                           console.log('s3에서 삭제 완료');
-//                           console.log(data);
-//                           callback(null, true);
-//                        }
-//                     });
-//                  }
-//                  async.waterfall([selectPhotos, deleteBackground, deleteUploadedFile], function(err, result) {
-//                     if(err) {
-//                        cb(err);
-//                     } else {
-//                        console.log('결과 ', result);
-//                        cb(null);
-//                     }
-//                  })
-//               }, function(err, result) {
-//                  if(err) {
-//                     callback(err);
-//                  } else {
-//                     connection.release();
-//                     console.log(result, "배경삭제 완료되었습니다.");
-//                     callback(null, {"message" : "배경사진을 삭제하였습니다."});
-//                  }
-//               });
-//               //async끝
-//
-//            }
-//
-//         }
-//      });
-//   }
-//
-//   async.waterfall([getConnection, selectBackground], function(err, result) {
-//      if(err) {
-//         err.message = "배경사진 삭제에 실패하였습니다.";
-//         next(err);
-//      } else {
-//         res.json(result);
-//      }
-//   })
-//});
+
+router.delete('/', isLoggedIn, function(req, res, next) {
+   var bid = [];
+   var bgid = req.body.bgid;
+
+   if((typeof bgid)=== 'string') {
+      bid.push(parseInt(bgid));
+   } else {
+      bgid.forEach(function(item) {
+         bid.push(parseInt(item));
+      });
+   }
+
+   //커넥션 연결
+   function getConnection(callback) {
+      pool.getConnection(function(err, connection) {
+         if(err) {
+            callback(err);
+         } else {
+            callback(null, connection);
+         }
+      });
+   }
+
+   //background테이블을 select하여 path를 추출한 후 s3에서 삭제
+   function selectBackground(connection, callback) {
+      var select = "select id, name "+
+                   "from background "+
+                   "where id in (?)";
+      connection.query(select, [bid], function(err, results) {
+         if(err) {
+            connection.release();
+            callback(err);
+         } else {
+            if(results.length === 0) {
+               var err = new Error('배경사진이 존재하지 않습니다.');
+               next(err);
+            } else {
+               var update = "update e_diary "+
+                  "set background_id = null "+
+                  "where background_id in (?)";
+               connection.query(update, [bid], function(err) {
+                  if(err) {
+                     connection.release();
+                     callback(err);
+                  }
+               });
+
+               async.each(results, function(result, cb) {
+
+                  function selectPhotos(callback) {
+                     var backgroundURL = [];
+
+                     var select = "select photourl "+
+                        "from photos "+
+                        "where refer_id = ? and refer_type = 4";
+                     connection.query(select, [result.id], function(err, result) {
+                        if(err) {
+                           connection.release();
+                           callback(err);
+                        } else {
+                           console.log('포토테이블 셀렉트 완료');
+                           backgroundURL.push(result[0].photourl);
+                        }
+                     });
+
+                     var deletePhoto = "delete from photos "+
+                                       "where refer_type = 4 and refer_id = ?";
+                     connection.query(deletePhoto, [result.id], function(err, result) {
+                        if(err) {
+                           connection.release();
+                           callback(err);
+                        } else {
+                           callback(null, backgroundURL);
+                        }
+                     })
+                  }
+
+                  function deleteBackground(backgroundURL, callback) {
+                     var deleteSql = "delete from background "+
+                        "where id = ?"
+                     connection.query(deleteSql, [result.id], function(err) {
+                        if(err) {
+                           connection.release();
+                           callback(err);
+                        } else {
+                           console.log('백그라운드 테이블에서 삭제 완료');
+                           callback(null, backgroundURL);
+                        }
+                     });
+                  }
+
+                  function deleteUploadedFile(background_url, callback) {
+                     var mimeType = mime.lookup(path.basename(background_url));
+
+                     var s3 = new AWS.S3({
+                        "accessKeyId" : s3config.key,
+                        "secretAccessKey" : s3config.secret,
+                        "region" : s3config.region,
+                        "params" : {
+                           "Bucket" : s3config.bucket,
+                           "Key" : s3config.bgDir + "/" + path.basename(background_url),
+                           "ACL" : s3config.bgACL,
+                           "ContentType" : mimeType
+                        }
+                     });
+
+                     s3.deleteObject(s3.params, function(err, data) {
+                        if(err) {
+                           callback(err);
+                        } else {
+                           console.log('s3에서 삭제 완료');
+                           console.log(data);
+                           callback(null, true);
+                        }
+                     });
+                  }
+                  async.waterfall([selectPhotos, deleteBackground, deleteUploadedFile], function(err, result) {
+                     if(err) {
+                        cb(err);
+                     } else {
+                        console.log('결과 ', result);
+                        cb(null);
+                     }
+                  })
+               }, function(err, result) {
+                  if(err) {
+                     callback(err);
+                  } else {
+                     connection.release();
+                     console.log(result, "배경삭제 완료되었습니다.");
+                     callback(null, {"message" : "배경사진을 삭제하였습니다."});
+                  }
+               });
+               //async끝
+
+            }
+
+         }
+      });
+   }
+
+   async.waterfall([getConnection, selectBackground], function(err, result) {
+      if(err) {
+         err.message = "배경사진 삭제에 실패하였습니다.";
+         next(err);
+      } else {
+         res.json(result);
+      }
+   })
+});
 
 module.exports = router;
