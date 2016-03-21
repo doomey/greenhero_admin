@@ -168,7 +168,6 @@ router.post('/', isLoggedIn, function(req, res, next) {
                res.json({"s3URL" : null});
             } else { //배경을 한개만 올린 경우
                var file = files['background'];
-               console.log("파일 타입 : ", typeof file);
                var mimeType = mime.lookup(path.basename(file.path));
 
                var s3 = new AWS.S3({
@@ -302,7 +301,6 @@ router.delete('/', isLoggedIn, function(req, res, next) {
                            connection.release();
                            callback(err);
                         } else {
-                           console.log('포토테이블 셀렉트 완료');
                            backgroundURL.push(result[0].photourl);
                         }
                      });
@@ -327,7 +325,6 @@ router.delete('/', isLoggedIn, function(req, res, next) {
                            connection.release();
                            callback(err);
                         } else {
-                           console.log('백그라운드 테이블에서 삭제 완료');
                            callback(null, backgroundURL);
                         }
                      });
@@ -352,7 +349,6 @@ router.delete('/', isLoggedIn, function(req, res, next) {
                         if(err) {
                            callback(err);
                         } else {
-                           console.log('s3에서 삭제 완료');
                            console.log(data);
                            callback(null, true);
                         }
@@ -362,7 +358,6 @@ router.delete('/', isLoggedIn, function(req, res, next) {
                      if(err) {
                         cb(err);
                      } else {
-                        console.log('결과 ', result);
                         cb(null);
                      }
                   })
