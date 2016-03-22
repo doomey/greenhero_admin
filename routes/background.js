@@ -263,6 +263,7 @@ router.delete('/:backgroundId', isLoggedIn, function(req, res, next) {
          if(err) {
             connection.release();
             err.message = "e_diary테이블의 background_id를 제거하는 과정에서 오류가 발생하였습니다.";
+            logger.log('errer', req.user.nickname+'님 '+err.message);
             callback(err);
          } else {
             callback(null, connection);
@@ -278,6 +279,7 @@ router.delete('/:backgroundId', isLoggedIn, function(req, res, next) {
       connection.query(select, [bid], function(err, result) {
          if(err) {
             connection.release();
+            logger.log('errer', req.user.nickname+'님 '+err.message);
             err.message = "배경화면의 URL을 검색하는 과정에서 오류가 발생하였습니다.";
             callback(err);
          } else {
@@ -304,6 +306,7 @@ router.delete('/:backgroundId', isLoggedIn, function(req, res, next) {
       s3.deleteObject(s3.params, function(err, data) {
          if(err) {
             err.message = "S3의 파일을 삭제하는 과정에서 오류가 발생하였습니다.";
+            logger.log('errer', req.user.nickname+'님 '+err.message);
             callback(err);
          } else {
             console.log(data);
@@ -320,6 +323,7 @@ router.delete('/:backgroundId', isLoggedIn, function(req, res, next) {
          if(err) {
             connection.release();
             err.message = "photos테이블에서 해당 배경사진에 관한 자료를 제거하는데 오류가 발생하였습니다.";
+            logger.log('errer', req.user.nickname+'님 '+err.message);
             callback(err);
          } else {
             console.log('photos테이블 삭제 완료');
@@ -332,6 +336,7 @@ router.delete('/:backgroundId', isLoggedIn, function(req, res, next) {
          if(err) {
             connection.release();
             err.message = "background테이블에서 해당 자료를 삭제하는데 오류가 발생하였습니다.";
+            logger.log('errer', req.user.nickname+'님 '+err.message);
             callback(err);
          } else {
             callback(null, {"message" : bid+"번 ID의 배경사진을 삭제하였습니다."});
@@ -342,9 +347,9 @@ router.delete('/:backgroundId', isLoggedIn, function(req, res, next) {
 
    async.waterfall([getConnection, disconnectEdiary, selectPhotos, deleteFile, deletePhotosAndBackgrounds], function(err, result) {
       if(err) {
-         err.message = "배경사진 삭제에 실패하였습니다.";
          next(err);
       } else {
+         logger.log('info', req.user.nickname+'님이 '+result.message);
          res.json(result);
       }
    });
