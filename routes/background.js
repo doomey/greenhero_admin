@@ -241,17 +241,8 @@ router.post('/', isLoggedIn, function(req, res, next) {
    }
 });
 
-router.delete('/', isLoggedIn, function(req, res, next) {
-   var bid = [];
-   var bgid = req.body.bgid;
-
-   if((typeof bgid)=== 'string') {
-      bid.push(parseInt(bgid));
-   } else {
-      bgid.forEach(function(item) {
-         bid.push(parseInt(item));
-      });
-   }
+router.delete('/:backgroundId', isLoggedIn, function(req, res, next) {
+   var bid = req.params.backgroundId;
 
    //커넥션 연결
    function getConnection(callback) {
@@ -263,129 +254,101 @@ router.delete('/', isLoggedIn, function(req, res, next) {
          }
       });
    }
-
-   //background테이블을 select하여 path를 추출한 후 s3에서 삭제
-   function selectBackground(connection, callback) {
-      var select = "select id, name "+
-                   "from background "+
-                   "where id in (?)";
-      connection.query(select, [bid], function(err, results) {
+   //e_diary의 background_id를 null로 만들기
+   function disconnectEdiary(connection, callback) {
+      var update = "update e_diary "+
+         "set background_id = null "+
+         "where background_id = ?";
+      connection.query(update, [bid], function(err) {
          if(err) {
             connection.release();
+            err.message = "e_diary테이블의 background_id를 제거하는 과정에서 오류가 발생하였습니다.";
             callback(err);
          } else {
-            if(results.length === 0) {
-               var err = new Error('배경사진이 존재하지 않습니다.');
-               next(err);
-            } else {
-               var update = "update e_diary "+
-                  "set background_id = null "+
-                  "where background_id in (?)";
-               connection.query(update, [bid], function(err) {
-                  if(err) {
-                     connection.release();
-                     callback(err);
-                  }
-               });
-
-               async.each(results, function(result, cb) {
-
-                  function selectPhotos(callback) {
-                     var backgroundURL = [];
-
-                     var select = "select photourl "+
-                        "from photos "+
-                        "where refer_id = ? and refer_type = 4";
-                     connection.query(select, [result.id], function(err, result) {
-                        if(err) {
-                           connection.release();
-                           callback(err);
-                        } else {
-                           backgroundURL.push(result[0].photourl);
-                        }
-                     });
-
-                     var deletePhoto = "delete from photos "+
-                                       "where refer_type = 4 and refer_id = ?";
-                     connection.query(deletePhoto, [result.id], function(err, result) {
-                        if(err) {
-                           connection.release();
-                           callback(err);
-                        } else {
-                           callback(null, backgroundURL);
-                        }
-                     })
-                  }
-
-                  function deleteBackground(backgroundURL, callback) {
-                     var deleteSql = "delete from background "+
-                        "where id = ?"
-                     connection.query(deleteSql, [result.id], function(err) {
-                        if(err) {
-                           connection.release();
-                           callback(err);
-                        } else {
-                           callback(null, backgroundURL);
-                        }
-                     });
-                  }
-
-                  function deleteUploadedFile(background_url, callback) {
-                     var mimeType = mime.lookup(path.basename(background_url));
-
-                     var s3 = new AWS.S3({
-                        "accessKeyId" : s3config.key,
-                        "secretAccessKey" : s3config.secret,
-                        "region" : s3config.region,
-                        "params" : {
-                           "Bucket" : s3config.bucket,
-                           "Key" : s3config.bgDir + "/" + path.basename(background_url),
-                           "ACL" : s3config.bgACL,
-                           "ContentType" : mimeType
-                        }
-                     });
-
-                     s3.deleteObject(s3.params, function(err, data) {
-                        if(err) {
-                           callback(err);
-                        } else {
-                           console.log(data);
-                           callback(null, true);
-                        }
-                     });
-                  }
-                  async.waterfall([selectPhotos, deleteBackground, deleteUploadedFile], function(err, result) {
-                     if(err) {
-                        cb(err);
-                     } else {
-                        cb(null);
-                     }
-                  })
-               }, function(err, result) {
-                  if(err) {
-                     callback(err);
-                  } else {
-                     connection.release();
-                     console.log(result, "배경삭제 완료되었습니다.");
-                     callback(null, {"message" : "배경사진을 삭제하였습니다."});
-                  }
-               });
-               //async끝
-
-            }
-
+            callback(null, connection);
          }
       });
    }
 
-   async.waterfall([getConnection, selectBackground], function(err, result) {
+   //photos에서 background의 url을 select
+   function selectPhotos(connection, callback) {
+      var select = "select photourl "+
+         "from photos "+
+         "where refer_id = ? and refer_type = 4";
+      connection.query(select, [bid], function(err, result) {
+         if(err) {
+            connection.release();
+            err.message = "배경화면의 URL을 검색하는 과정에서 오류가 발생하였습니다.";
+            callback(err);
+         } else {
+            callback(null, result[0].photourl, connection);
+         }
+      });
+   }
+   //s3의 파일 삭제
+   function deleteFile(bgURL, connection, callback) {
+      var mimeType = mime.lookup(path.basename(bgURL));
+
+      var s3 = new AWS.S3({
+         "accessKeyId" : s3config.key,
+         "secretAccessKey" : s3config.secret,
+         "region" : s3config.region,
+         "params" : {
+            "Bucket" : s3config.bucket,
+            "Key" : s3config.bgDir + "/" + path.basename(bgURL),
+            "ACL" : s3config.bgACL,
+            "ContentType" : mimeType
+         }
+      });
+
+      s3.deleteObject(s3.params, function(err, data) {
+         if(err) {
+            err.message = "S3의 파일을 삭제하는 과정에서 오류가 발생하였습니다.";
+            callback(err);
+         } else {
+            console.log(data);
+            console.log(data.Location, '삭제되었습니다.');
+            callback(null, connection);
+         }
+      });
+   }
+   //delete Photo and Background
+   function deletePhotosAndBackgrounds(connection, callback) {
+      var deletePhoto = "delete from photos "+
+         "where refer_type = 4 and refer_id = ?";
+      connection.query(deletePhoto, [bid], function(err, result) {
+         if(err) {
+            connection.release();
+            err.message = "photos테이블에서 해당 배경사진에 관한 자료를 제거하는데 오류가 발생하였습니다.";
+            callback(err);
+         } else {
+            console.log('photos테이블 삭제 완료');
+         }
+      });
+
+      var deleteSql = "delete from background "+
+         "where id = ?";
+      connection.query(deleteSql, [bid], function(err) {
+         if(err) {
+            connection.release();
+            err.message = "background테이블에서 해당 자료를 삭제하는데 오류가 발생하였습니다.";
+            callback(err);
+         } else {
+            callback(null, {"message" : bid+"번 ID의 배경사진을 삭제하였습니다."});
+         }
+      });
+   }
+
+
+   async.waterfall([getConnection, disconnectEdiary, selectPhotos, deleteFile, deletePhotosAndBackgrounds], function(err, result) {
       if(err) {
          err.message = "배경사진 삭제에 실패하였습니다.";
          next(err);
       } else {
          res.json(result);
       }
-   })
+   });
+
 });
 
 module.exports = router;
