@@ -54,7 +54,7 @@ router.get('/', isLoggedIn, function(req, res, next) {
          offset = limit * (page - 1);
 
          //안드로이드에서 게시글 번호 붙이기 -> offset과 info.result.list의 인덱스를 이용하여 글 번호를 붙일것.
-         var select = "select e.id as id, e.title as title, e.cname as cname, e.sdate as sdate, e.edate as edate, e.fileurl as fileurl, date_format(CONVERT_TZ(e.uploaddate,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as uploaddate, e.originalfilename as originalfilename, e.modifiedfilename as modifiedfilename, e.filetype as filetype, e.content as content, p.photourl as photourl "+
+         var select = "select e.id as id, e.title as title, e.cname as cname, date_format(CONVERT_TZ(e.sdate, '+00:00', '+9:00'), '%Y-%m-%d') as sdate, date_format(CONVERT_TZ(e.edate, '+00:00', '+9:00'), '%Y-%m-%d') as edate, e.fileurl as fileurl, date_format(CONVERT_TZ(e.uploaddate,'+00:00','+9:00'),'%Y-%m-%d %H:%i:%s') as uploaddate, e.originalfilename as originalfilename, e.modifiedfilename as modifiedfilename, e.filetype as filetype, e.content as content, p.photourl as photourl "+
                       "from epromotion e left join photos p on (e.id = p.refer_id and p.refer_type = 2) "+
                       "order by e.id desc limit ? offset ?";
          connection.query(select, [limit, offset] , function(err, results) {
@@ -243,7 +243,7 @@ router.post('/', isLoggedIn, function(req, res, next) {
 
       function insertEpromotion(articleinfo, videoInfo, thumbnailInfo, connection, callback) {
          var insert = "insert into epromotion(title, cname, sdate, edate, content, iparty_id, fileurl, uploaddate, originalfilename, modifiedfilename, filetype) "+
-            "values(?, ?, ?, ?, ?, ?, ?, now(), ?, ?, ?)";
+            "values(?, ?, date_format(CONVERT_TZ(?, '+9:00', '+00:00'), '%Y-%m-%d'), date_format(CONVERT_TZ(?, '+9:00', '+00:00'), '%Y-%m-%d'), ?, ?, ?, now(), ?, ?, ?)";
          connection.query(insert, [articleinfo.title, articleinfo.company, articleinfo.startDate, articleinfo.endDate, articleinfo.content, req.user.id, videoInfo.fileurl, videoInfo.originalfilename, videoInfo.modifiedfilename, videoInfo.filetype], function(err, result) { //로그인필요
             if(err) {
                connection.release();
